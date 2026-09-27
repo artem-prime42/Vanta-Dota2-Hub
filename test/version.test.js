@@ -5,9 +5,9 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 
-test('app version is set to 2.0.4 and displayed in settings', async () => {
+test('app version is set to 2.0.5 and displayed in settings', async () => {
   const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '2.0.4');
+  assert.equal(pkg.version, '2.0.5');
 
   const settingsMarkup = await fs.readFile(path.join(root, 'renderer', 'settings-page.js'), 'utf8');
   const appService = await fs.readFile(path.join(root, 'src', 'main', 'services', 'app-service.js'), 'utf8');

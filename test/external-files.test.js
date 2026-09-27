@@ -48,6 +48,20 @@ test('external analyzer excludes files owned by VANTA manifests', async () => {
   assert.deepEqual(files.map((file) => file.fileName), ['manual_pudge.vpk']);
 });
 
+test('managed disabled VPKs are not reported as external files', async () => {
+  const game = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-owned-disabled-'));
+  const language = path.join(game, 'dota_english');
+  await fs.mkdir(language, { recursive: true });
+  const owned = path.join(language, 'pak02_dir.vpk');
+  const external = path.join(language, 'manual.vpk');
+  await fs.writeFile(`${owned}.vanta-disabled`, 'managed disabled');
+  await fs.writeFile(external, 'external');
+
+  const files = await detectExternalFiles(game, [], 'english', [owned]);
+
+  assert.deepEqual(files.map((file) => file.fileName), ['manual.vpk']);
+});
+
 test('external analyzer excludes files recorded by the old launcher manifest', async () => {
   const game = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-legacy-'));
   const language = path.join(game, 'dota_english');

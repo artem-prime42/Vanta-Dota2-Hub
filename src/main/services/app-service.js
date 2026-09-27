@@ -11,6 +11,7 @@ const { detectDota, validateDota } = require('../../infrastructure/steam-detecto
 const { searchMods } = require('../../core/models');
 const { detectExternalFiles } = require('../../infrastructure/external-files');
 const { HeroGridService } = require('../../infrastructure/hero-grid-service');
+const { migrateLegacyUserData } = require('../../infrastructure/user-data-migration');
 
 const DISCORD_APP_ID = '1551207182744166511';
 
@@ -56,6 +57,7 @@ function normalizeLanguageSuffix(value, fallback = 'russian') {
 class AppService {
   constructor({ rootDir, onProgress = () => {} }) {
     this.rootDir = rootDir;
+    this.userDataMigration = null;
     this.storage = new JsonStorage(rootDir);
     this.savedPacks = new SavedPackStore({ rootDir });
     this.catalog = new CatalogClient({ rootDir });
@@ -70,6 +72,7 @@ class AppService {
   }
 
   async init() {
+    this.userDataMigration = await migrateLegacyUserData(this.rootDir);
     await this.storage.init();
     const langSuffix = normalizeLanguageSuffix(this.storage.state.settings.langSuffix);
     if (langSuffix !== this.storage.state.settings.langSuffix) {
@@ -259,7 +262,21 @@ class AppService {
     }
     if (changed) await this.storage.patch({ installedMods });
   }
-  async getLibrary() { const languageFolder = this.storage.state.settings.langSuffix || 'russian'; if (!this.gamePath) { const found = await detectDota(); if (found) this.gamePath = found.gamePath; } await this.importLegacyLibrary(languageFolder); await this.mods.syncInstalled(); const allInstalled = Object.values(this.storage.state.installedMods); const installed = allInstalled.filter((mod) => languageFolderMatches(mod.languageFolder, languageFolder)); const ownedFiles = installed.flatMap((mod) => (mod.installedFiles || []).map((file) => path.join(mod.targetRoot || this.gamePath || '', mod.deployedFileName || mod.gameFileName || (mod.targetRoot ? file : path.join(mod.languageFolder || languageFolder, file))))); const legacyFiles = await this.getLegacyOwnedFiles(languageFolder); return { ...this.snapshot(), installed, external: await detectExternalFiles(this.gamePath, this.catalog.mods, languageFolder, ownedFiles, legacyFiles) }; }
+  async getLibrary() {
+    const languageFolder = this.storage.state.settings.langSuffix || 'russian';
+    if (!this.gamePath) { const found = await detectDota(); if (found) this.gamePath = found.gamePath; }
+    await this.importLegacyLibrary(languageFolder);
+    await this.mods.syncInstalled();
+    const allInstalled = Object.values(this.storage.state.installedMods);
+    const installed = allInstalled.filter((mod) => languageFolderMatches(mod.languageFolder, languageFolder));
+    const ownedFiles = installed.flatMap((mod) => {
+      const recordedNames = [mod.deployedFileName, mod.gameFileName, ...(mod.installedFiles || [])].filter(Boolean).map((file) => path.basename(file));
+      const targetRoot = mod.targetRoot || (this.gamePath && path.join(this.gamePath, /^dota_/i.test(mod.languageFolder || languageFolder) ? (mod.languageFolder || languageFolder) : `dota_${mod.languageFolder || languageFolder}`));
+      return targetRoot ? recordedNames.map((file) => path.join(targetRoot, file)) : [];
+    });
+    const legacyFiles = await this.getLegacyOwnedFiles(languageFolder);
+    return { ...this.snapshot(), installed, external: await detectExternalFiles(this.gamePath, this.catalog.mods, languageFolder, ownedFiles, legacyFiles) };
+  }
   async getLanguageFolders() { if (!this.gamePath) return []; const entries = await fs.readdir(this.gamePath, { withFileTypes: true }); const folders = entries.filter((entry) => entry.isDirectory() && /^dota_/i.test(entry.name)).map((entry) => normalizeLanguageSuffix(entry.name, '')).filter(Boolean); const selected = normalizeLanguageSuffix(this.storage.state.settings.langSuffix); return [...new Set([...folders, selected])].sort(); }
   async openModsFolder() { if (!this.gamePath) throw new Error('Dota 2 installation is not configured'); const folder = this.mods.getLanguageRoot(normalizeLanguageSuffix(this.storage.state.settings.langSuffix)); await fs.mkdir(folder, { recursive: true }); const { spawn } = require('child_process'); const command = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open'; const child = spawn(command, [folder], { detached: true, stdio: 'ignore' }); child.on('error', async () => { try { const { shell } = require('electron'); await shell.openPath(folder); } catch {} }); child.unref(); return folder; }
   async setExternalEnabled(relativePath, enabled) { if (!this.gamePath || !relativePath || relativePath.includes('..')) throw new Error('External file path is invalid'); const root = path.resolve(this.gamePath); const active = path.resolve(root, relativePath); const disabled = `${active}.vanta-disabled`; if (!active.startsWith(`${root}${path.sep}`)) throw new Error('External file path is outside the selected Dota folder'); const source = enabled ? [disabled, `${active}.off`, `${active}.moff`] : [active]; const target = enabled ? active : disabled; const exists = async (file) => { try { await require('fs/promises').access(file); return true; } catch { return false; } }; let existing = ''; for (const candidate of source) if (await exists(candidate)) { existing = candidate; break; } if (existing && path.resolve(existing) !== path.resolve(target)) await require('fs/promises').rename(existing, target); return this.getLibrary(); }
@@ -471,6 +488,7 @@ class AppService {
   async clearDownloadArchives() { await this.downloads.clear(); return this.snapshot(); }
   async getDownloadArchiveStats() { return this.downloads.getStats(); }
   getSettings() { return this.snapshot().settings; }
+  async getDiagnostics(logger, app) { return require('../../infrastructure/diagnostics').collectDiagnostics({ service: this, app, logger }); }
   async setSetting(key, value) {
     if (key === 'langSuffix') value = normalizeLanguageSuffix(value);
     if (key === 'langSuffix' && value !== this.storage.state.settings.langSuffix) await this.mods.moveInstalledMods(value);

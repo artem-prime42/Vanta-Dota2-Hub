@@ -69,6 +69,6 @@ const libraryBulkObserver = new MutationObserver(syncLibraryBulkUi);
 libraryBulkObserver.observe(document.body, { childList: true, subtree: true });
 syncLibraryBulkUi();
 window.vanta.onDownloadProgress((event) => {
+  if (event.operation !== 'pack') return;
   if (event.state === 'processing' || event.state === 'completed' || event.state === 'failed') showPackProgress(event);
-  if (event.state === 'processing' && event.phase) toast(event.phase);
 });

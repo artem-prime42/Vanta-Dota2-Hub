@@ -1,8 +1,11 @@
 const path = require('path');
+const fs = require('fs/promises');
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const { Client } = require('discord-rpc');
 const { AppService } = require('./services/app-service');
 const { UpdateService } = require('./services/update-service');
+const AdmZip = require('adm-zip');
+const { DiagnosticLogger, buildDiagnosticArchiveFiles } = require('../infrastructure/diagnostics');
 
 const DISCORD_APP_ID = '1551207182744166511';
 
@@ -41,6 +44,7 @@ async function updateDiscordPresence() {
 
 let service;
 let updater;
+let diagnosticLogger;
 if (process.platform === 'linux') {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch('log-level', '3');
@@ -50,9 +54,15 @@ function register(channel, handler) { ipcMain.handle(channel, async (_event, pay
 async function createWindow() {
   Menu.setApplicationMenu(null);
   app.setName('VANTA DOTA2 HUB');
+  diagnosticLogger = new DiagnosticLogger(app.getPath('userData'));
+  await diagnosticLogger.init();
+  diagnosticLogger.attachConsole();
+  process.on('uncaughtExceptionMonitor', (error) => diagnosticLogger.error(error.stack || error.message));
+  process.on('unhandledRejection', (reason) => diagnosticLogger.error(reason?.stack || reason?.message || String(reason)));
   service = new AppService({ rootDir: app.getPath('userData'), onProgress: (event) => BrowserWindow.getAllWindows().forEach((window) => window.webContents.send('download:progress', event)) });
   service.appVersion = app.getVersion();
   const window = new BrowserWindow({ width: 1440, height: 920, minWidth: 960, minHeight: 640, frame: false, backgroundColor: '#111315', webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
+  window.webContents.on('console-message', (_event, level, message, line, sourceId) => diagnosticLogger.write('renderer', `[${level}] ${message} (${sourceId}:${line})`));
   updater = new UpdateService({ getWindow: () => window, getAutoCheckEnabled: () => service?.storage?.state?.settings?.autoUpdateEnabled !== false });
   ipcMain.handle('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
   ipcMain.handle('window:toggle-maximize', (event) => { const current = BrowserWindow.fromWebContents(event.sender); if (current?.isMaximized()) current.unmaximize(); else current?.maximize(); return current?.isMaximized(); });
@@ -92,6 +102,16 @@ async function createWindow() {
   register('downloads:clear', () => service.clearDownloadArchives());
   register('downloads:stats', () => service.getDownloadArchiveStats());
   register('settings:get', () => service.getSettings());
+  register('diagnostics:export', async () => {
+    const result = await dialog.showSaveDialog(window, { title: 'Export VANTA diagnostics', defaultPath: path.join(app.getPath('downloads'), `VANTA-diagnostics-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`), filters: [{ name: 'ZIP archive', extensions: ['zip'] }] });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    const files = await buildDiagnosticArchiveFiles({ service, app, logger: diagnosticLogger });
+    const archive = new AdmZip();
+    for (const [name, content] of Object.entries(files)) archive.addFile(name, Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8'));
+    await fs.writeFile(result.filePath, archive.toBuffer());
+    return { canceled: false, filePath: result.filePath };
+  });
+  register('diagnostics:renderer-log', ({ level = 'error', message = '', stack = '' } = {}) => diagnosticLogger.write(level, `[renderer] ${message}${stack ? `\n${stack}` : ''}`));
   register('hero-grids:list', () => service.getHeroGrids());
   register('hero-grids:diagnose', () => service.diagnoseHeroGrid());
   register('hero-grids:user-grids', () => service.getHeroGridUserGrids());

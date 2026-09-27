@@ -70,6 +70,10 @@ function normalizeHeroId(value) {
 function heroPortraitId(hero) { const value = normalizeHeroId(hero); return HERO_PORTRAIT_ALIASES[value] || value; }
 const $ = (selector) => document.querySelector(selector);
 const call = async (channel, payload) => { const response = await window.vanta.call(channel, payload); if (!response.ok) throw new Error(response.error); return response.data; };
+if (typeof window.addEventListener === 'function') {
+  window.addEventListener('error', (event) => { window.vanta.call('diagnostics:renderer-log', { level: 'error', message: event.message, stack: event.error?.stack || '' }).catch(() => {}); });
+  window.addEventListener('unhandledrejection', (event) => { const reason = event.reason; window.vanta.call('diagnostics:renderer-log', { level: 'error', message: reason?.message || String(reason), stack: reason?.stack || '' }).catch(() => {}); });
+}
 function toast(message) { const node = $('#toast'); if (!node) return; node.textContent = message; node.classList.add('show'); setTimeout(() => node.classList.remove('show'), 3500); }
 function renderUpdatePanel() {
   const panel = $('#update-panel');

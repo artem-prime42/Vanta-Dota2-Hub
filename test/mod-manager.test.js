@@ -45,6 +45,31 @@ test('library keeps mods from the shared dota folder visible for every language'
   assert.equal(library.installed.some((mod) => mod.id === 'shared'), true);
 });
 
+test('legacy installed records without targetRoot are excluded from external file detection', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-library-owned-path-'));
+  const gamePath = path.join(root, 'game');
+  const targetRoot = path.join(gamePath, 'dota_english');
+  await fs.mkdir(targetRoot, { recursive: true });
+  await fs.writeFile(path.join(targetRoot, 'pak02_dir.vpk.vanta-disabled'), 'managed');
+  await fs.writeFile(path.join(targetRoot, 'manual_pudge.vpk'), 'external');
+  const service = new AppService({ rootDir: root });
+  await service.storage.init();
+  service.gamePath = gamePath;
+  await service.storage.patch({
+    settings: { ...service.storage.state.settings, langSuffix: 'english' },
+    installedMods: {
+      oldRecord: { id: 'oldRecord', modId: 'oldRecord', type: 'mod', fileName: 'pak02_dir.vpk', gameFileName: 'pak02_dir.vpk', languageFolder: 'english', installedFiles: ['pak02_dir.vpk'], enabled: false },
+    },
+  });
+  service.importLegacyLibrary = async () => {};
+  service.mods.syncInstalled = async () => {};
+
+  const library = await service.getLibrary();
+
+  assert.equal(library.installed.length, 1);
+  assert.deepEqual(library.external.map((file) => file.fileName), ['manual_pudge.vpk']);
+});
+
 test('changing language moves installed mods to the selected language folder', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-language-move-'));
   const gamePath = path.join(root, 'game');
@@ -162,8 +187,12 @@ test('merge creates one pack VPK and removes source Library items', async () => 
     one: { modId: 'one', name: 'One', languageFolder: 'dota_english', targetRoot, installedFiles: ['first_dir.vpk'] },
     two: { modId: 'two', name: 'Two', languageFolder: 'dota_english', targetRoot, installedFiles: ['second_dir.vpk'] },
   } });
-  const manager = new ModManager({ rootDir: root, storage, getGamePath: () => gamePath, downloads: { download: async () => '' } });
+  const progressEvents = [];
+  const manager = new ModManager({ rootDir: root, storage, getGamePath: () => gamePath, downloads: { download: async () => '' }, onProgress: (event) => progressEvents.push(event) });
   const pack = await manager.merge(['one', 'two'], 'Combined');
+  assert.ok(progressEvents.length > 0);
+  assert.ok(progressEvents.every((event) => event.operation === 'pack'));
+  assert.equal(progressEvents.at(-1).phase, 'Pack created');
   assert.equal(pack.name, 'Combined');
   assert.equal(storage.state.installedMods.one, undefined);
   assert.equal(storage.state.installedMods.two, undefined);

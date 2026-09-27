@@ -18,10 +18,11 @@ async function detectExternalFiles(gamePath, catalogMods = [], languageFolder = 
   const configuredFolder = /^dota_/i.test(languageFolder) ? languageFolder : `dota_${languageFolder}`;
   const candidates = [path.join(gamePath, configuredFolder)];
   if (languageFolder.toLowerCase() === 'dota') candidates[0] = path.join(gamePath, 'dota');
-  const owned = new Set([...ownedFiles, ...legacyFiles].map((file) => path.normalize(file).toLowerCase()));
+  const canonicalPath = (file) => path.normalize(String(file).replace(/\.(?:vanta-disabled|off|moff)$/i, '')).toLowerCase();
+  const owned = new Set([...ownedFiles, ...legacyFiles].map(canonicalPath));
   const legacyNames = catalogArchiveNames(catalogMods);
   const files = (await Promise.all(candidates.map((directory) => findVpkFiles(directory)))).flat().filter((file) => {
-    if (owned.has(path.normalize(file).toLowerCase())) return false;
+    if (owned.has(canonicalPath(file))) return false;
     const baseName = path.basename(file).replace(/\.(?:vanta-disabled|off|moff)$/i, '').replace(/\.vpk$/i, '').toLowerCase();
     return !legacyNames.has(baseName);
   });

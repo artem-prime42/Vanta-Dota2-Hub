@@ -15,9 +15,12 @@ class CatalogClient {
     this.mods = [];
     this.authors = [];
     this.meta = { revision: null, updatedAt: null, offline: false };
+    this.lastAttemptAt = null;
+    this.lastError = null;
   }
 
   async load({ force = false } = {}) {
+    this.lastAttemptAt = new Date().toISOString();
     await fs.mkdir(this.cacheDir, { recursive: true });
     let networkError = null;
     if (force || !(await this.exists(this.cacheFile))) {
@@ -25,6 +28,8 @@ class CatalogClient {
     } else {
       try { await this.fetchRemote(); } catch (error) { networkError = error; }
     }
+    this.lastError = networkError?.message || null;
+    if (networkError) console.warn(`[catalog] Remote catalog refresh failed: ${networkError.message}`);
     if (!this.mods.length) await this.loadCache();
     this.meta.offline = Boolean(networkError);
     await this.loadAuthors();

@@ -493,19 +493,19 @@ class ModManager {
     const reservation = await this.reserveFileName(previousPack?.fileName || null); const temporary = `${reservation.path}.part`;
     try {
       const progressId = previousPack?.id || 'library';
-      this.onProgress({ id: progressId, state: 'processing', phase: 'Reading mods...', percent: 5 });
+      this.onProgress({ id: progressId, operation: 'pack', state: 'processing', phase: 'Reading mods...', percent: 5 });
       const writer = new VpkWriter(); const mergedFiles = new Map();
       for (const [index, record] of records.entries()) {
-        this.onProgress({ id: progressId, state: 'processing', phase: `Reading mod ${index + 1} of ${records.length}...`, percent: 10 + Math.round((index / records.length) * 55) });
+        this.onProgress({ id: progressId, operation: 'pack', state: 'processing', phase: `Reading mod ${index + 1} of ${records.length}...`, percent: 10 + Math.round((index / records.length) * 55) });
         const source = path.join(this.library.directory, record.fileName);
         if (!await this.exists(source)) throw new Error(`Source VPK is missing: ${record.fileName}`);
         const reader = VpkReader.open(source);
         try { for (const file of reader.files()) mergedFiles.set(file, reader.readFile(file)); } finally { reader.close(); }
-        this.onProgress({ id: progressId, state: 'processing', phase: `Read mod ${index + 1} of ${records.length}`, percent: 10 + Math.round(((index + 1) / records.length) * 55) });
+        this.onProgress({ id: progressId, operation: 'pack', state: 'processing', phase: `Read mod ${index + 1} of ${records.length}`, percent: 10 + Math.round(((index + 1) / records.length) * 55) });
       }
-      this.onProgress({ id: progressId, state: 'processing', phase: 'Resolving conflicts...', percent: 70 });
+      this.onProgress({ id: progressId, operation: 'pack', state: 'processing', phase: 'Resolving conflicts...', percent: 70 });
       for (const [file, data] of mergedFiles) writer.addFile(file, data);
-      this.onProgress({ id: progressId, state: 'processing', phase: 'Building VPK...', percent: 82 });
+      this.onProgress({ id: progressId, operation: 'pack', state: 'processing', phase: 'Building VPK...', percent: 82 });
       writer.write(temporary); await this.validateVpk(temporary); await fs.rename(temporary, reservation.path);
       const packId = previousPack?.id || `pack-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const sourceMods = records.flatMap((record) => record.type === 'pack' ? (record.sourceMods || record.packMods || []) : [{ id: this.recordId(record), name: record.displayName || record.name, displayName: record.displayName || record.name, fileName: record.fileName, author: record.author, previewUrl: record.previewUrl, hero: record.hero, heroLabel: record.heroLabel, slot: record.slot }]);
@@ -525,12 +525,12 @@ class ModManager {
         delete installedMods[this.recordId(record)];
       }
       await this.storage.patch({ installedMods });
-      this.onProgress({ id: packId, state: 'processing', phase: 'Finalizing Pack...', percent: 96 });
-      this.onProgress({ id: packId, state: 'completed', phase: 'Pack created', percent: 100 });
+      this.onProgress({ id: packId, operation: 'pack', state: 'processing', phase: 'Finalizing Pack...', percent: 96 });
+      this.onProgress({ id: packId, operation: 'pack', state: 'completed', phase: 'Pack created', percent: 100 });
       return pack;
     } catch (error) {
       await fs.rm(temporary, { force: true });
-      this.onProgress({ id: previousPack?.id || 'library', state: 'failed', phase: error.message });
+      this.onProgress({ id: previousPack?.id || 'library', operation: 'pack', state: 'failed', phase: error.message });
       throw error;
     }
     finally { await reservation.release(); }

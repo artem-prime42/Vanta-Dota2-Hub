@@ -7,3 +7,5 @@
 #content:has(.settings-page) { padding: 0; }.statusbar { display: none !important; }
 @media (max-width: 980px) { .settings-page { padding: 28px 24px 30px; }.settings-page .settings-grid { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .settings-page { padding: 24px 18px; }.settings-page .setting-row { grid-template-columns: 1fr; align-items: start; gap: 10px; }.settings-page .setting-actions, .settings-page .requested-socials .social-actions { justify-content: flex-start; }.settings-page .scale-control { justify-content: flex-start; width: 100%; }.settings-page .setting-path { white-space: normal; overflow-wrap: anywhere; } }
+.settings-diagnostics { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 15px 0; border-top: 1px solid var(--line); }.settings-diagnostics strong { color: var(--text); font-size: 13px; }.settings-diagnostics p { max-width: 560px; margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+@media (max-width: 620px) { .settings-diagnostics { align-items: flex-start; flex-direction: column; } }
