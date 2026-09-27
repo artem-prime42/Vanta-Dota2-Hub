@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const { JsonStorage } = require('../src/infrastructure/storage');
 const { VpkLibrary } = require('../src/infrastructure/vpk-library');
 const { ModManager } = require('../src/application/mod-manager');
+const { AppService } = require('../src/main/services/app-service');
 
 async function listVpkFiles(dir) {
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -59,6 +60,49 @@ test('allocator rejects a full pak02-pak99 range', async () => {
   const library = new VpkLibrary({ rootDir: root, storage }); await library.init();
   for (let number = 2; number <= 99; number += 1) await fs.writeFile(path.join(root, 'database', 'library', `pak${String(number).padStart(2, '0')}_dir.vpk`), 'occupied');
   await assert.rejects(() => library.getNextAvailablePakFilename(), /No free VPK slots available/);
+});
+
+test('legacy deployed pak filenames do not occupy library slots', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-pak-legacy-deployed-'));
+  const storage = new JsonStorage(root); await storage.init();
+  await storage.patch({ installedMods: {
+    legacy: { gameFileName: 'pak02_dir.vpk', deployedFileName: 'pak02_dir.vpk', installedFiles: ['pak02_dir.vpk'], targetRoot: path.join(root, 'game', 'dota') },
+  } });
+  const library = new VpkLibrary({ rootDir: root, storage }); await library.init();
+
+  assert.equal(await library.getNextAvailablePakFilename(), 'pak02_dir.vpk');
+});
+
+test('legacy record migration continues startup when all library slots are occupied', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-pak-legacy-full-'));
+  const storage = new JsonStorage(root); await storage.init();
+  const gameDir = path.join(root, 'game', 'dota_russian');
+  const libraryDir = path.join(root, 'database', 'library');
+  await fs.mkdir(gameDir, { recursive: true });
+  await fs.mkdir(libraryDir, { recursive: true });
+  for (let number = 2; number <= 98; number += 1) {
+    await fs.writeFile(path.join(libraryDir, `pak${String(number).padStart(2, '0')}_dir.vpk`), 'occupied');
+  }
+  await fs.writeFile(path.join(gameDir, 'pak10_dir.vpk'), 'legacy one');
+  await fs.writeFile(path.join(gameDir, 'pak11_dir.vpk'), 'legacy two');
+  await storage.patch({
+    settings: { ...storage.state.settings, gamePath: path.dirname(gameDir) },
+    installedMods: {
+    one: { id: 'one', type: 'mod', installedFiles: ['pak10_dir.vpk'], gameFileName: 'pak10_dir.vpk', deployedFileName: 'pak10_dir.vpk', targetRoot: gameDir },
+    two: { id: 'two', type: 'mod', installedFiles: ['pak11_dir.vpk'], gameFileName: 'pak11_dir.vpk', deployedFileName: 'pak11_dir.vpk', targetRoot: gameDir },
+    },
+  });
+  const service = new AppService({ rootDir: root });
+  let catalogLoaded = false;
+  service.catalog.load = async () => { catalogLoaded = true; return { mods: [], meta: { offline: false } }; };
+
+  await assert.doesNotReject(() => service.init());
+
+  assert.equal(catalogLoaded, true);
+  assert.equal(service.storage.state.installedMods.one.fileName, 'pak99_dir.vpk');
+  assert.equal(service.storage.state.installedMods.two.fileName, undefined);
+  assert.equal(await fs.readFile(path.join(libraryDir, 'pak99_dir.vpk'), 'utf8'), 'legacy one');
+  assert.equal(await fs.readFile(path.join(gameDir, 'pak11_dir.vpk'), 'utf8'), 'legacy two');
 });
 
 test('priority follows the deployed filename instead of stale metadata', async () => {

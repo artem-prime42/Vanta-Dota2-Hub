@@ -33,7 +33,7 @@ class VpkLibrary {
   async occupiedFilenames() {
     const occupied = new Set();
     for (const record of Object.values(this.storage.state.installedMods || {})) {
-      const fileName = record.fileName || (record.installedFiles || []).find(isPakFilename);
+      const fileName = record.fileName || (!record.gameFileName && !record.deployedFileName && !record.targetRoot ? (record.installedFiles || []).find(isPakFilename) : null);
       if (isPakFilename(fileName)) occupied.add(fileName.toLowerCase());
     }
     for (const entry of await fs.readdir(this.directory)) {
@@ -52,7 +52,9 @@ class VpkLibrary {
       const candidate = pakFilename(number);
       if (!occupied.has(candidate.toLowerCase())) return candidate;
     }
-    throw new Error('No free VPK slots available. Available range: pak02_dir.vpk - pak99_dir.vpk');
+    const error = new Error('No free VPK slots available. Available range: pak02_dir.vpk - pak99_dir.vpk');
+    error.code = 'VPK_SLOTS_FULL';
+    throw error;
   }
 
   async acquireLock() {

@@ -46,7 +46,14 @@ class ModManager {
       const sourceBase = path.resolve(record.targetRoot || '', legacyFile);
       const source = await this.firstExisting([sourceBase, sourceBase.replace(/\.(?:off|moff)$/i, ''), `${sourceBase}.off`, `${sourceBase}.moff`]);
       if (!await this.exists(source)) continue;
-      const reservation = await this.library.reserveFileName();
+      let reservation;
+      try {
+        reservation = await this.library.reserveFileName();
+      } catch (error) {
+        if (error.code !== 'VPK_SLOTS_FULL') throw error;
+        console.warn(`[mod:migrate] VPK library is full; leaving ${legacyFile} managed in the Dota folder and continuing startup.`);
+        break;
+      }
       try {
         await fs.copyFile(source, reservation.path);
         installedMods[id] = { ...record, id: record.id || id, modId: record.modId || id, displayName: record.displayName || record.name || id, fileName: reservation.fileName, deployedFileName: record.deployedFileName || legacyFile.replace(/\.(?:off|moff)$/i, ''), gameFileName: record.gameFileName || legacyFile.replace(/\.(?:off|moff)$/i, ''), installedFiles: [reservation.fileName], type: record.type || 'mod' };
