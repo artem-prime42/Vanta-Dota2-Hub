@@ -69,6 +69,63 @@ test('changing language moves installed mods to the selected language folder', a
   assert.equal(service.storage.state.installedMods.mod.languageFolder, 'russian');
 });
 
+test('language folder values normalize dota_ prefixes and preserve defaults', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-language-normalize-'));
+  const service = new AppService({ rootDir: root });
+  await service.storage.init();
+  service.gamePath = path.join(root, 'game');
+  await fs.mkdir(path.join(service.gamePath, 'dota_english'), { recursive: true });
+
+  assert.equal(service.storage.state.settings.langSuffix, 'russian');
+  assert.deepEqual(await service.getLanguageFolders(), ['english', 'russian']);
+  await service.setSetting('langSuffix', 'dota_english');
+  assert.equal(service.storage.state.settings.langSuffix, 'english');
+  assert.equal(await service.openModsFolder(), path.join(service.gamePath, 'dota_english'));
+});
+
+test('language migration restores missing deployed files from the VANTA library', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-language-restore-'));
+  const gamePath = path.join(root, 'game');
+  const libraryPath = path.join(root, 'database', 'library', 'pak02_dir.vpk');
+  await fs.mkdir(path.dirname(libraryPath), { recursive: true });
+  const writer = new VpkWriter(); writer.addFile('scripts/restored.txt', Buffer.from('restored')); writer.write(libraryPath);
+  const service = new AppService({ rootDir: root });
+  await service.storage.init();
+  service.gamePath = gamePath;
+  await service.storage.patch({
+    settings: { ...service.storage.state.settings, langSuffix: 'english' },
+    installedMods: {
+      mod: { id: 'mod', modId: 'mod', type: 'mod', fileName: 'pak02_dir.vpk', gameFileName: 'pak02_dir.vpk', languageFolder: 'english', targetRoot: path.join(gamePath, 'dota_english'), installedFiles: ['pak02_dir.vpk'], enabled: false },
+    },
+  });
+
+  await service.setSetting('langSuffix', 'russian');
+
+  const restoredPath = path.join(gamePath, 'dota_russian', 'pak02_dir.vpk.vanta-disabled');
+  const reader = VpkReader.open(restoredPath);
+  try { assert.equal(reader.readFile('scripts/restored.txt').toString(), 'restored'); } finally { reader.close(); }
+});
+
+test('installation skips occupied game VPK slots instead of overwriting them', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-install-slot-conflict-'));
+  const gamePath = path.join(root, 'game');
+  const targetRoot = path.join(gamePath, 'dota_russian');
+  await fs.mkdir(targetRoot, { recursive: true });
+  await fs.writeFile(path.join(targetRoot, 'pak02_dir.vpk'), 'third-party');
+  const sourceVpk = path.join(root, 'source_dir.vpk');
+  const writer = new VpkWriter(); writer.addFile('scripts/new.txt', Buffer.from('new')); writer.write(sourceVpk);
+  const archive = path.join(root, 'mod.zip');
+  const zip = new AdmZip(); zip.addLocalFile(sourceVpk, '', 'new.vpk'); zip.writeZip(archive);
+  const storage = new JsonStorage(root); await storage.init();
+  const manager = new ModManager({ rootDir: root, storage, getGamePath: () => gamePath, getLanguageFolder: () => 'russian', downloads: { download: async () => archive } });
+
+  await manager.install({ id: 'new-mod', name: 'New mod', categoryId: 'heroes', version: '1', downloadUrl: 'file://archive' });
+
+  assert.equal(storage.state.installedMods['new-mod'].fileName, 'pak03_dir.vpk');
+  assert.equal(await fs.readFile(path.join(targetRoot, 'pak02_dir.vpk'), 'utf8'), 'third-party');
+  await fs.access(path.join(targetRoot, 'pak03_dir.vpk'));
+});
+
 test('enable and disable only rename files owned by the manifest', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-toggle-'));
   const gamePath = path.join(root, 'game');
@@ -200,10 +257,10 @@ test('saveSavedPack copies an existing library pack without selected mods', asyn
   const afterRestart = await restarted.listSavedPacks();
   assert.equal(afterRestart.savedPacks[0].name, 'Saved Pack A');
   restarted.gamePath = path.join(root, 'game');
-  await fs.mkdir(path.join(restarted.gamePath, 'dota_dota'), { recursive: true });
+  await fs.mkdir(path.join(restarted.gamePath, 'dota_russian'), { recursive: true });
   const activated = await restarted.activateSavedPack(saved.id);
   assert.equal(activated.savedPacks[0].installedFileName, 'pak02_dir.vpk');
-  await fs.access(path.join(restarted.gamePath, 'dota_dota', 'pak02_dir.vpk'));
+  await fs.access(path.join(restarted.gamePath, 'dota_russian', 'pak02_dir.vpk'));
 });
 
 test('saveSavedPack copies the requested pack even when selected mods point elsewhere', async () => {
@@ -281,7 +338,7 @@ test('saved pack activation links filesystem Library records and avoids duplicat
   const restored = (await fs.readdir(targetRoot)).filter((file) => /^pak\d{2}_dir\.vpk$/i.test(file));
   assert.equal(restored.length, 1);
   await restarted.deleteSavedPack(savedId);
-  assert.equal((await fs.readdir(targetRoot)).filter((file) => /^pak\d{2}_dir\.vpk$/i.test(file)).length, 1);
+  assert.equal((await fs.readdir(targetRoot)).filter((file) => /^pak\d{2}_dir\.vpk$/i.test(file)).length, 0);
 });
 
 test('saved pack ignores stale library ids and still saves valid entries', async () => {

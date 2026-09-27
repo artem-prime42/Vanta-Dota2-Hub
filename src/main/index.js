@@ -51,6 +51,7 @@ async function createWindow() {
   Menu.setApplicationMenu(null);
   app.setName('VANTA DOTA2 HUB');
   service = new AppService({ rootDir: app.getPath('userData'), onProgress: (event) => BrowserWindow.getAllWindows().forEach((window) => window.webContents.send('download:progress', event)) });
+  service.appVersion = app.getVersion();
   const window = new BrowserWindow({ width: 1440, height: 920, minWidth: 960, minHeight: 640, frame: false, backgroundColor: '#111315', webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
   updater = new UpdateService({ getWindow: () => window, getAutoCheckEnabled: () => service?.storage?.state?.settings?.autoUpdateEnabled !== false });
   ipcMain.handle('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());

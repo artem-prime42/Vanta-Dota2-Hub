@@ -48,12 +48,18 @@ function languageFolderMatches(recordFolder, selectedFolder) {
   return record.replace(/^dota_/, '') === selected.replace(/^dota_/, '');
 }
 
+function normalizeLanguageSuffix(value, fallback = 'russian') {
+  const normalized = String(value || '').trim().replace(/^dota_/i, '');
+  return /^[a-z0-9_-]+$/i.test(normalized) ? normalized : fallback;
+}
+
 class AppService {
   constructor({ rootDir, onProgress = () => {} }) {
     this.rootDir = rootDir;
     this.storage = new JsonStorage(rootDir);
     this.savedPacks = new SavedPackStore({ rootDir });
     this.catalog = new CatalogClient({ rootDir });
+    this.fileHashCache = new Map();
     const dataParentDir = path.dirname(rootDir);
     const legacyRootDirs = ['VANTA', 'VANTA DOTA2 HUB', 'VANTA Dota'].map((name) => path.join(dataParentDir, name)).filter((directory) => directory !== rootDir);
     this.downloads = new DownloadManager(rootDir, onProgress, legacyRootDirs);
@@ -65,6 +71,10 @@ class AppService {
 
   async init() {
     await this.storage.init();
+    const langSuffix = normalizeLanguageSuffix(this.storage.state.settings.langSuffix);
+    if (langSuffix !== this.storage.state.settings.langSuffix) {
+      await this.storage.patch({ settings: { ...this.storage.state.settings, langSuffix } });
+    }
     await this.savedPacks.init();
     await this.mods.init();
     this.gamePath = this.storage.state.settings.gamePath || null;
@@ -72,6 +82,7 @@ class AppService {
       const found = await detectDota();
       if (found) this.gamePath = found.gamePath;
     }
+    if (this.gamePath) await this.mods.moveInstalledMods(langSuffix);
     const catalog = await this.catalog.load();
     return this.snapshot(catalog);
   }
@@ -88,7 +99,7 @@ class AppService {
   }
 
   snapshot(catalog = { mods: this.catalog.mods, meta: this.catalog.meta }) {
-    return { ...catalog, installed: this.storage.state.installedMods, packMembership: this.getPackMembership(), favorites: this.storage.state.favorites, settings: { ...this.storage.state.settings, discordAppId: DISCORD_APP_ID }, gamePath: this.gamePath, authors: this.getAuthors(), discordAppId: DISCORD_APP_ID };
+    return { ...catalog, installed: this.storage.state.installedMods, packMembership: this.getPackMembership(), favorites: this.storage.state.favorites, settings: { ...this.storage.state.settings, discordAppId: DISCORD_APP_ID }, gamePath: this.gamePath, authors: this.getAuthors(), discordAppId: DISCORD_APP_ID, appVersion: this.appVersion || null };
   }
 
   getAuthors() {
@@ -129,7 +140,7 @@ class AppService {
 
   async refreshCatalog() { return this.snapshot(await this.catalog.load({ force: true })); }
   async toggleFavorite(id) { const set = new Set(this.storage.state.favorites); set.has(id) ? set.delete(id) : set.add(id); await this.storage.patch({ favorites: [...set] }); return this.snapshot(); }
-  async setGamePath(gamePath) { if (!(await validateDota(gamePath))) throw new Error('Selected folder is not a valid Dota 2 game directory'); this.gamePath = gamePath; await this.storage.patch({ settings: { ...this.storage.state.settings, gamePath } }); return this.snapshot(); }
+  async setGamePath(gamePath) { if (!(await validateDota(gamePath))) throw new Error('Selected folder is not a valid Dota 2 game directory'); const previousPath = this.gamePath; this.gamePath = gamePath; try { await this.mods.moveInstalledMods(this.storage.state.settings.langSuffix || 'russian'); } catch (error) { this.gamePath = previousPath; throw error; } await this.storage.patch({ settings: { ...this.storage.state.settings, gamePath } }); return this.snapshot(); }
   async detectGame() { const found = await detectDota(); if (found) await this.setGamePath(found.gamePath); return this.snapshot(); }
   async install(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); await this.mods.install(mod); return this.snapshot(); }
   async update(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); await this.mods.update(mod); return this.snapshot(); }
@@ -195,12 +206,24 @@ class AppService {
     } catch {}
     const savedPacks = await this.savedPacks.list();
     const savedPackHashes = new Map();
+    const savedPackSizes = new Set();
     for (const pack of savedPacks) {
       const savedPath = path.join(this.savedPacks.directory, pack.id, pack.fileName || 'pack.vpk');
-      try { savedPackHashes.set(await this.hashFile(savedPath), pack); } catch {}
+      try {
+        const stat = await fs.stat(savedPath);
+        const hash = pack.contentHash || await this.hashFileCached(savedPath);
+        savedPackHashes.set(hash, pack);
+        savedPackSizes.add(stat.size);
+      } catch {}
     }
     const installedMods = { ...this.storage.state.installedMods };
     let changed = false;
+    const installedByFile = new Map();
+    for (const [id, mod] of Object.entries(installedMods)) {
+      for (const name of [mod.deployedFileName, mod.gameFileName, mod.fileName]) {
+        if (name) installedByFile.set(String(name).toLowerCase(), { ...mod, id });
+      }
+    }
     for (const [id, record] of Object.entries(installedMods)) {
       if (record.source !== 'legacy' && record.source !== 'saved-pack' || !record.targetRoot) continue;
       const base = path.join(record.targetRoot, record.gameFileName || record.deployedFileName || record.installedFiles?.[0] || '');
@@ -213,26 +236,32 @@ class AppService {
       const deployedFileName = candidate.file.replace(/\.(?:off|moff)$/i, '');
       const key = deployedFileName.toLowerCase();
       let savedPack = null;
-      if (!/\.(?:off|moff)$/i.test(candidate.file)) {
-        try { savedPack = savedPackHashes.get(await this.hashFile(path.join(targetRoot, candidate.file))) || null; } catch {}
+      if (savedPackHashes.size && savedPackSizes.size && !/\.(?:off|moff)$/i.test(candidate.file)) {
+        try {
+          const candidatePath = path.join(targetRoot, candidate.file);
+          const stat = await fs.stat(candidatePath);
+          if (savedPackSizes.has(stat.size)) savedPack = savedPackHashes.get(await this.hashFileCached(candidatePath)) || null;
+        } catch {}
       }
-      const existing = Object.values(installedMods).find((mod) => mod.deployedFileName?.toLowerCase() === key || mod.gameFileName?.toLowerCase() === key || mod.fileName?.toLowerCase() === key);
+      const existing = installedByFile.get(key);
       if (savedPack) {
         const id = existing?.id || `saved-library-${savedPack.id}`;
         installedMods[id] = { ...existing, id, modId: id, type: 'pack', source: 'saved-pack', savedPackId: savedPack.id, contentHash: savedPack.contentHash, displayName: savedPack.name, name: savedPack.name, category: 'Pack', categoryId: 'packs', languageFolder, targetRoot, deployedFileName, gameFileName: deployedFileName, fileName: candidate.file, installedFiles: [candidate.file], enabled: true, sourceMods: savedPack.sourceMods || [], packMods: savedPack.sourceMods || [], modIds: savedPack.modIds || [] };
         if (existing?.id !== id || existing?.type !== 'pack' || existing?.savedPackId !== savedPack.id || existing?.fileName !== candidate.file) changed = true;
+        installedByFile.set(key, installedMods[id]);
         continue;
       }
       if (existing) continue;
       const id = `legacy-${Buffer.from(key).toString('hex').slice(0, 24)}`;
       installedMods[id] = { id, modId: id, type: 'mod', source: 'legacy', displayName: candidate.record?.name || deployedFileName.replace(/_dir\.vpk$/i, ''), name: candidate.record?.name || deployedFileName.replace(/_dir\.vpk$/i, ''), categoryId: candidate.record?.categoryId || 'other', previewUrl: candidate.record?.preview || null, languageFolder, targetRoot, deployedFileName, gameFileName: deployedFileName, installedFiles: [candidate.file], enabled: !/\.(?:off|moff)$/i.test(candidate.file), version: 'legacy', installedAt: candidate.record?.installedAt || new Date().toISOString() };
+        installedByFile.set(key, installedMods[id]);
       changed = true;
     }
     if (changed) await this.storage.patch({ installedMods });
   }
   async getLibrary() { const languageFolder = this.storage.state.settings.langSuffix || 'russian'; if (!this.gamePath) { const found = await detectDota(); if (found) this.gamePath = found.gamePath; } await this.importLegacyLibrary(languageFolder); await this.mods.syncInstalled(); const allInstalled = Object.values(this.storage.state.installedMods); const installed = allInstalled.filter((mod) => languageFolderMatches(mod.languageFolder, languageFolder)); const ownedFiles = installed.flatMap((mod) => (mod.installedFiles || []).map((file) => path.join(mod.targetRoot || this.gamePath || '', mod.deployedFileName || mod.gameFileName || (mod.targetRoot ? file : path.join(mod.languageFolder || languageFolder, file))))); const legacyFiles = await this.getLegacyOwnedFiles(languageFolder); return { ...this.snapshot(), installed, external: await detectExternalFiles(this.gamePath, this.catalog.mods, languageFolder, ownedFiles, legacyFiles) }; }
-  async getLanguageFolders() { if (!this.gamePath) return []; const fs = require('fs/promises'); const entries = await fs.readdir(this.gamePath, { withFileTypes: true }); return entries.filter((entry) => entry.isDirectory() && /^dota_/i.test(entry.name)).map((entry) => entry.name).sort(); }
-  async openModsFolder() { if (!this.gamePath) throw new Error('Dota 2 installation is not configured'); const { spawn } = require('child_process'); const folder = path.join(this.gamePath, this.storage.state.settings.langSuffix || 'dota'); await require('fs/promises').mkdir(folder, { recursive: true }); const command = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open'; const args = process.platform === 'win32' ? [folder] : [folder]; try { const child = spawn(command, args, { detached: true, stdio: 'ignore' }); child.unref(); } catch (error) { try { const { shell } = require('electron'); void shell.openPath(folder).catch(() => {}); } catch {} } return folder; }
+  async getLanguageFolders() { if (!this.gamePath) return []; const entries = await fs.readdir(this.gamePath, { withFileTypes: true }); const folders = entries.filter((entry) => entry.isDirectory() && /^dota_/i.test(entry.name)).map((entry) => normalizeLanguageSuffix(entry.name, '')).filter(Boolean); const selected = normalizeLanguageSuffix(this.storage.state.settings.langSuffix); return [...new Set([...folders, selected])].sort(); }
+  async openModsFolder() { if (!this.gamePath) throw new Error('Dota 2 installation is not configured'); const folder = this.mods.getLanguageRoot(normalizeLanguageSuffix(this.storage.state.settings.langSuffix)); await fs.mkdir(folder, { recursive: true }); const { spawn } = require('child_process'); const command = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open'; const child = spawn(command, [folder], { detached: true, stdio: 'ignore' }); child.on('error', async () => { try { const { shell } = require('electron'); await shell.openPath(folder); } catch {} }); child.unref(); return folder; }
   async setExternalEnabled(relativePath, enabled) { if (!this.gamePath || !relativePath || relativePath.includes('..')) throw new Error('External file path is invalid'); const root = path.resolve(this.gamePath); const active = path.resolve(root, relativePath); const disabled = `${active}.vanta-disabled`; if (!active.startsWith(`${root}${path.sep}`)) throw new Error('External file path is outside the selected Dota folder'); const source = enabled ? [disabled, `${active}.off`, `${active}.moff`] : [active]; const target = enabled ? active : disabled; const exists = async (file) => { try { await require('fs/promises').access(file); return true; } catch { return false; } }; let existing = ''; for (const candidate of source) if (await exists(candidate)) { existing = candidate; break; } if (existing && path.resolve(existing) !== path.resolve(target)) await require('fs/promises').rename(existing, target); return this.getLibrary(); }
   async removeExternal(relativePath) { if (!this.gamePath || !relativePath || relativePath.includes('..')) throw new Error('External file path is invalid'); const root = path.resolve(this.gamePath); const active = path.resolve(root, relativePath); const disabled = `${active}.vanta-disabled`; if (!active.startsWith(`${root}${path.sep}`)) throw new Error('External file path is outside the selected Dota folder'); await require('fs/promises').rm(active, { force: true }); await require('fs/promises').rm(disabled, { force: true }); return this.getLibrary(); }
   recordId(record) { return record?.id || record?.modId || null; }
@@ -273,7 +302,8 @@ class AppService {
       await this.savedPacks.update(id, { installedFileName: activeFile.fileName, contentHash: sourceHash });
       return this.listSavedPacks();
     }
-    const candidate = await this.mods.library.getNextAvailablePakFilename(pack.installedFileName || null);
+    const occupiedFiles = (await fs.readdir(targetRoot)).map((file) => file.replace(/\.(?:vanta-disabled|off|moff)$/i, ''));
+    const candidate = await this.mods.library.getNextAvailablePakFilename(pack.installedFileName || null, occupiedFiles);
     const finalPath = path.join(targetRoot, candidate);
     if (await this.exists(finalPath)) {
       const targetHash = await this.hashFile(finalPath);
@@ -336,6 +366,16 @@ class AppService {
   async deleteSavedPack(id) {
     const pack = await this.savedPacks.get(id);
     if (!pack) throw new Error('Saved pack not found');
+    if (this.gamePath) {
+      await this.getLibrary();
+      const installed = Object.values(this.storage.state.installedMods).find((record) => record.savedPackId === id);
+      if (installed) await this.mods.uninstall(this.recordId(installed));
+      else {
+        const activeFile = await this.findActiveSavedPackFile(pack);
+        if (activeFile) await fs.rm(activeFile.path, { force: true });
+      }
+      this.activeVpkHashCache = null;
+    }
     await this.savedPacks.remove(id);
     return this.listSavedPacks();
   }
@@ -344,6 +384,16 @@ class AppService {
     if (!filePath) return null;
     const data = await fs.readFile(filePath);
     return crypto.createHash('sha256').update(data).digest('hex');
+  }
+  async hashFileCached(filePath) {
+    const stat = await fs.stat(filePath);
+    const signature = `${stat.size}:${stat.mtimeMs}`;
+    const cached = this.fileHashCache.get(filePath);
+    if (cached?.signature === signature) return cached.hash;
+    const hash = await this.hashFile(filePath);
+    this.fileHashCache.set(filePath, { signature, hash });
+    if (this.fileHashCache.size > 1000) this.fileHashCache.delete(this.fileHashCache.keys().next().value);
+    return hash;
   }
   async exists(filePath) {
     try { await fs.access(filePath); return true; } catch { return false; }
@@ -422,10 +472,11 @@ class AppService {
   async getDownloadArchiveStats() { return this.downloads.getStats(); }
   getSettings() { return this.snapshot().settings; }
   async setSetting(key, value) {
+    if (key === 'langSuffix') value = normalizeLanguageSuffix(value);
     if (key === 'langSuffix' && value !== this.storage.state.settings.langSuffix) await this.mods.moveInstalledMods(value);
     await this.storage.patch({ settings: { ...this.storage.state.settings, [key]: value } });
     return this.snapshot();
   }
 }
 
-module.exports = { AppService };
+module.exports = { AppService, normalizeLanguageSuffix };

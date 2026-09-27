@@ -31,6 +31,7 @@ class ModManager {
     this.getLanguageFolder = getLanguageFolder;
     this.onProgress = onProgress;
     this.library = new VpkLibrary({ rootDir, storage });
+    this.fileHashCache = new Map();
   }
 
   async init() { await this.library.init(); await this.migrateLegacyRecords(); }
@@ -58,10 +59,22 @@ class ModManager {
   recordId(record) { return record.id || record.modId; }
 
   getPriorityValue(record) {
-    if (record?.priority !== undefined && record.priority !== null && Number.isFinite(Number(record.priority))) return Number(record.priority);
-    const match = String(record?.fileName || '').match(/pak(\d{2})_dir\.vpk/i);
+    const match = String(record?.gameFileName || record?.deployedFileName || record?.fileName || '').match(/pak(\d{2})_dir\.vpk/i);
     if (match) return Number.parseInt(match[1], 10);
+    if (record?.priority !== undefined && record.priority !== null && Number.isFinite(Number(record.priority))) return Number(record.priority);
     return FIRST_PAK_NUMBER;
+  }
+
+  async reserveFileName(preferredFileName = null) {
+    const targetRoot = this.getLanguageRoot();
+    let existingFiles = [];
+    if (targetRoot) {
+      try { existingFiles = await fs.readdir(targetRoot); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    const occupied = existingFiles
+      .map((file) => file.replace(/\.(?:vanta-disabled|off|moff)$/i, ''))
+      .filter(isPakFilename);
+    return this.library.reserveFileName(preferredFileName, occupied);
   }
 
   async reorder(ids) {
@@ -222,7 +235,7 @@ class ModManager {
       vpkData = vpkEntry.getData();
     }
     const previous = this.storage.state.installedMods[mod.id];
-    const reservation = await this.library.reserveFileName(previous?.fileName || null);
+    const reservation = await this.reserveFileName(previous?.fileName || null);
     const temporary = `${reservation.path}.part`;
     const backup = `${reservation.path}.backup`;
     try {
@@ -253,7 +266,7 @@ class ModManager {
   async update(mod) { return this.install(mod); }
 
   async importVpk(filePath, displayName = path.basename(filePath, path.extname(filePath))) {
-    const reservation = await this.library.reserveFileName();
+    const reservation = await this.reserveFileName();
     const temporary = `${reservation.path}.part`;
     try {
       await fs.copyFile(filePath, temporary);
@@ -291,19 +304,56 @@ class ModManager {
     if (!gamePath) return installedMods;
     const targetRoot = this.getLanguageRoot(languageFolder);
     const moves = [];
+    const copies = [];
     for (const record of Object.values(installedMods)) {
       if (!record?.fileName) continue;
       const sourceRoot = record.targetRoot || this.getLanguageRoot(record.languageFolder);
-      const fileName = record.gameFileName || record.deployedFileName || record.fileName;
-      if (!sourceRoot || !fileName || path.resolve(sourceRoot) === path.resolve(targetRoot)) continue;
+      const fileName = path.basename(record.gameFileName || record.deployedFileName || record.fileName);
+      if (!sourceRoot || !fileName) continue;
       const source = await this.firstExisting([fileName, `${fileName}.vanta-disabled`, `${fileName}.off`, `${fileName}.moff`].map((name) => path.join(sourceRoot, name)));
-      if (source) moves.push({ record, source, target: path.join(targetRoot, path.basename(source)) });
+      if (source) {
+        const target = path.join(targetRoot, path.basename(source));
+        if (path.resolve(source) !== path.resolve(target)) moves.push({ record, source, target });
+      } else {
+        const librarySource = path.join(this.library.directory, record.fileName);
+        if (await this.exists(librarySource)) {
+          const targetName = record.enabled === false ? `${fileName}.vanta-disabled` : fileName;
+          copies.push({ record, source: librarySource, target: path.join(targetRoot, targetName) });
+        }
+      }
     }
-    for (const move of moves) {
-      if (await this.exists(move.target)) throw new Error(`Cannot move mod because the target file already exists: ${path.basename(move.target)}`);
+    const targets = new Set();
+    for (const item of [...moves, ...copies]) {
+      const targetKey = path.resolve(item.target).toLowerCase();
+      if (targets.has(targetKey)) throw new Error(`Multiple installed mods use the same target file: ${path.basename(item.target)}`);
+      targets.add(targetKey);
+      if (moves.includes(item) && await this.exists(item.target)) {
+        throw new Error(`Cannot move mod because the target file already exists: ${path.basename(item.target)}`);
+      }
     }
     await fs.mkdir(targetRoot, { recursive: true });
-    for (const move of moves) await fs.rename(move.source, move.target);
+    const completed = [];
+    try {
+      for (const move of moves) { await fs.rename(move.source, move.target); completed.push({ ...move, moved: true }); }
+      for (const copy of copies) {
+        if (await this.exists(copy.target)) {
+          if (await hashFile(copy.source) !== await hashFile(copy.target)) {
+            throw new Error(`Cannot restore mod because the target file already exists: ${path.basename(copy.target)}`);
+          }
+          continue;
+        }
+        await fs.copyFile(copy.source, copy.target);
+        completed.push({ ...copy, moved: false });
+      }
+    } catch (error) {
+      for (const item of completed.reverse()) {
+        try {
+          if (item.moved) await fs.rename(item.target, item.source);
+          else await fs.rm(item.target, { force: true });
+        } catch {}
+      }
+      throw error;
+    }
     const updatedMods = { ...installedMods };
     for (const record of Object.values(installedMods)) {
       if (!record?.fileName) continue;
@@ -315,7 +365,80 @@ class ModManager {
     return updatedMods;
   }
 
-  async syncInstalled() { await this.library.init(); await this.migrateLegacyRecords(); return this.storage.state.installedMods; }
+  async syncInstalled() {
+    await this.library.init();
+    await this.migrateLegacyRecords();
+    await this.reconcileGameFilenames();
+    return this.storage.state.installedMods;
+  }
+
+  async reconcileGameFilenames() {
+    const gamePath = this.getGamePath();
+    if (!gamePath) return;
+    const installedMods = { ...this.storage.state.installedMods };
+    let changed = false;
+    const directoryCache = new Map();
+    for (const [id, record] of Object.entries(installedMods)) {
+      if (!record?.fileName || (!record.targetRoot && record.enabled === false)) continue;
+      const targetRoot = record.targetRoot || this.getLanguageRoot(record.languageFolder);
+      const storedName = path.basename(record.gameFileName || record.deployedFileName || record.fileName);
+      const possibleNames = [storedName, `${storedName}.vanta-disabled`, `${storedName}.off`, `${storedName}.moff`];
+      let recordedFileExists = false;
+      for (const name of possibleNames) {
+        if (await this.exists(path.join(targetRoot, name))) { recordedFileExists = true; break; }
+      }
+      if (recordedFileExists) continue;
+
+      let gameFiles = directoryCache.get(targetRoot);
+      if (!gameFiles) {
+        let entries = [];
+        try { entries = await fs.readdir(targetRoot); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        gameFiles = await Promise.all(entries
+          .filter((name) => /^pak\d{2}_dir\.vpk(?:\.vanta-disabled|\.off|\.moff)?$/i.test(name))
+          .map(async (name) => {
+            const filePath = path.join(targetRoot, name);
+            try { return { name, filePath, size: (await fs.stat(filePath)).size }; } catch { return null; }
+          }));
+        gameFiles = gameFiles.filter(Boolean);
+        directoryCache.set(targetRoot, gameFiles);
+      }
+      const libraryPath = path.join(this.library.directory, record.fileName);
+      let libraryStat;
+      try { libraryStat = await fs.stat(libraryPath); } catch { continue; }
+      const sameSizedCandidates = gameFiles.filter((candidate) => candidate.size === libraryStat.size);
+      if (!sameSizedCandidates.length) continue;
+      const libraryHash = await this.cachedHash(libraryPath);
+      let match = null;
+      for (const candidate of sameSizedCandidates) {
+        if (await this.cachedHash(candidate.filePath) === libraryHash) { match = candidate; break; }
+      }
+      if (!match) continue;
+
+      const gameFileName = match.name.replace(/\.(?:vanta-disabled|off|moff)$/i, '');
+      const next = {
+        ...record,
+        gameFileName,
+        deployedFileName: gameFileName,
+        targetRoot,
+        enabled: !/\.(?:vanta-disabled|off|moff)$/i.test(match.name),
+      };
+      installedMods[id] = next;
+      await this.writeManifest(next);
+      changed = true;
+    }
+    if (changed) await this.storage.patch({ installedMods });
+  }
+
+  async cachedHash(filePath) {
+    const stat = await fs.stat(filePath);
+    const signature = `${stat.size}:${stat.mtimeMs}`;
+    const cached = this.fileHashCache.get(filePath);
+    if (cached?.signature === signature) return cached.hash;
+    const hash = await hashFile(filePath);
+    this.fileHashCache.set(filePath, { signature, hash });
+    if (this.fileHashCache.size > 500) this.fileHashCache.delete(this.fileHashCache.keys().next().value);
+    return hash;
+  }
 
   async uninstall(id) {
     const record = this.storage.state.installedMods[id];
@@ -367,7 +490,7 @@ class ModManager {
     const records = ids.map((id) => this.storage.state.installedMods[id]).filter(Boolean);
     if (records.length !== ids.length || records.length < 2) throw new Error('Selected Library mods were not found');
     const displayName = String(name || '').trim(); if (!displayName) throw new Error('Pack name is required');
-    const reservation = await this.library.reserveFileName(previousPack?.fileName || null); const temporary = `${reservation.path}.part`;
+    const reservation = await this.reserveFileName(previousPack?.fileName || null); const temporary = `${reservation.path}.part`;
     try {
       const progressId = previousPack?.id || 'library';
       this.onProgress({ id: progressId, state: 'processing', phase: 'Reading mods...', percent: 5 });

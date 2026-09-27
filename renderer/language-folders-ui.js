@@ -1,16 +1,17 @@
 async function loadRealLanguageFolders() {
   const select = document.querySelector('#language-folder');
-  if (!select || select.dataset.loaded === '1') return;
-  select.dataset.loaded = '1';
+  if (!select) return;
+  const gamePath = state.data?.gamePath || '';
+  if (select.dataset.loadedPath === gamePath) return;
+  select.dataset.loadedPath = gamePath;
   try {
     const folders = await call('game:language-folders');
-    const current = state.data.settings?.langSuffix || select.value;
-    select.innerHTML = folders.length
-      ? folders.map((folder) => `<option value="${folder}">${folder}</option>`).join('')
-      : '<option value="">No language folders found</option>';
-    if (folders.includes(current)) select.value = current;
+    const current = String(state.data?.settings?.langSuffix || select.value || 'russian').replace(/^dota_/i, '');
+    const options = [...new Set([...folders, current])];
+    select.innerHTML = options.map((folder) => `<option value="${folder}">${folder}</option>`).join('');
+    select.value = current;
   } catch {
-    // Keep the settings page usable if the selected path is temporarily unavailable.
+    select.dataset.loadedPath = '';
   }
 }
 const languageFolderObserver = new MutationObserver(loadRealLanguageFolders);

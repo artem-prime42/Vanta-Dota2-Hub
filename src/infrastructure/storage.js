@@ -11,14 +11,14 @@ class JsonStorage {
   constructor(rootDir) {
     this.rootDir = rootDir;
     this.file = path.join(rootDir, 'database', 'state.json');
-    this.state = { settings: { discordActivityEnabled: true, autoUpdateEnabled: true }, favorites: [], installedMods: {}, downloads: {}, customLoadouts: {}, savedPacks: [] };
+    this.state = { settings: { langSuffix: 'russian', discordActivityEnabled: true, autoUpdateEnabled: true }, favorites: [], installedMods: {}, downloads: {}, customLoadouts: {}, savedPacks: [] };
   }
 
   async init() {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
     try {
       const parsed = JSON.parse(await fs.readFile(this.file, 'utf8'));
-      this.state = { ...this.state, ...parsed };
+      this.state = { ...this.state, ...parsed, settings: { ...this.state.settings, ...(parsed.settings || {}) } };
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
       await this.save();

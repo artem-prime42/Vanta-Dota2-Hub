@@ -61,6 +61,57 @@ test('allocator rejects a full pak02-pak99 range', async () => {
   await assert.rejects(() => library.getNextAvailablePakFilename(), /No free VPK slots available/);
 });
 
+test('priority follows the deployed filename instead of stale metadata', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-priority-actual-name-'));
+  const storage = new JsonStorage(root); await storage.init();
+  const manager = new ModManager({ rootDir: root, storage, downloads: {}, getGamePath: () => null });
+
+  assert.equal(manager.getPriorityValue({ fileName: 'pak11_dir.vpk', gameFileName: 'pak03_dir.vpk', priority: 11 }), 3);
+});
+
+test('library sync corrects a stale deployed filename using the matching game VPK', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-library-actual-file-'));
+  const gamePath = path.join(root, 'game');
+  const targetRoot = path.join(gamePath, 'dota_russian');
+  const libraryDir = path.join(root, 'database', 'library');
+  await fs.mkdir(targetRoot, { recursive: true });
+  await fs.mkdir(libraryDir, { recursive: true });
+  const vpkPath = path.join(libraryDir, 'pak11_dir.vpk');
+  const writer = new (require('vpk-tools').VpkWriter)();
+  writer.addFile('scripts/actual.txt', Buffer.from('same mod')); writer.write(vpkPath);
+  await fs.copyFile(vpkPath, path.join(targetRoot, 'pak03_dir.vpk'));
+  const storage = new JsonStorage(root); await storage.init();
+  await storage.patch({ installedMods: {
+    item: { id: 'item', modId: 'item', type: 'mod', fileName: 'pak11_dir.vpk', gameFileName: 'pak11_dir.vpk', targetRoot, languageFolder: 'russian', enabled: true, priority: 11 },
+  } });
+  const manager = new ModManager({ rootDir: root, storage, downloads: {}, getGamePath: () => gamePath });
+
+  await manager.syncInstalled();
+
+  assert.equal(storage.state.installedMods.item.gameFileName, 'pak03_dir.vpk');
+  assert.equal(storage.state.installedMods.item.priority, 11);
+  assert.equal(manager.getPriorityValue(storage.state.installedMods.item), 3);
+});
+
+test('library scan does not hash game VPKs when there are no saved packs', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-library-scan-fast-'));
+  const gamePath = path.join(root, 'game');
+  const targetRoot = path.join(gamePath, 'dota_russian');
+  await fs.mkdir(targetRoot, { recursive: true });
+  await fs.writeFile(path.join(targetRoot, 'pak03_dir.vpk'), Buffer.alloc(512 * 1024, 7));
+  const { AppService } = require('../src/main/services/app-service');
+  const service = new AppService({ rootDir: root });
+  await service.storage.init();
+  service.gamePath = gamePath;
+  let hashCalls = 0;
+  const hashFile = service.hashFile.bind(service);
+  service.hashFile = async (filePath) => { hashCalls += 1; return hashFile(filePath); };
+
+  await service.getLibrary();
+
+  assert.equal(hashCalls, 0);
+});
+
 test('reorder renames actual pak files and persists the new priority order', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-priority-'));
   const storage = new JsonStorage(root); await storage.init();

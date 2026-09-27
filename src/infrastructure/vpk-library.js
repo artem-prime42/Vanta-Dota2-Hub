@@ -42,8 +42,11 @@ class VpkLibrary {
     return occupied;
   }
 
-  async getNextAvailablePakFilename(excludedFileName = null) {
+  async getNextAvailablePakFilename(excludedFileName = null, additionalOccupied = []) {
     const occupied = await this.occupiedFilenames();
+    for (const fileName of additionalOccupied) {
+      if (isPakFilename(fileName)) occupied.add(fileName.toLowerCase());
+    }
     if (isPakFilename(excludedFileName)) occupied.delete(excludedFileName.toLowerCase());
     for (let number = FIRST_PAK_NUMBER; number <= LAST_PAK_NUMBER; number += 1) {
       const candidate = pakFilename(number);
@@ -68,7 +71,7 @@ class VpkLibrary {
     }
   }
 
-  async reserveFileName(preferredFileName = null) {
+  async reserveFileName(preferredFileName = null, additionalOccupied = []) {
     await this.init();
     let releaseQueue;
     const previous = this.queue;
@@ -76,7 +79,7 @@ class VpkLibrary {
     await previous;
     const releaseLock = await this.acquireLock();
     try {
-      const fileName = preferredFileName || await this.getNextAvailablePakFilename();
+      const fileName = preferredFileName || await this.getNextAvailablePakFilename(null, additionalOccupied);
       if (!isPakFilename(fileName)) throw new Error('Invalid VPK filename');
       if (!preferredFileName && await this.exists(path.join(this.directory, fileName))) throw new Error('VPK slot became unavailable');
       return {

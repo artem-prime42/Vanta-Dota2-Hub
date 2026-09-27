@@ -35,9 +35,15 @@ test('package builds do not publish implicitly while release builds publish expl
   assert.match(pkg.scripts['release:linux'], /--publish always(?:\s|$)/);
 });
 
-test('generated updater metadata matches the current release when build artifacts exist', async () => {
+test('generated updater metadata matches the current release when current-version artifacts exist', async () => {
   const pkg = await readJson('package.json');
   for (const name of ['latest.yml', 'latest-linux.yml']) {
+    const artifact = name === 'latest.yml' ? `VANTA-Setup-${pkg.version}.exe` : `VANTA-${pkg.version}.AppImage`;
+    const artifactPath = path.join(root, 'dist', artifact);
+    try { await fs.access(artifactPath); } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
     const file = path.join(root, 'dist', name);
     try {
       const content = await fs.readFile(file, 'utf8');

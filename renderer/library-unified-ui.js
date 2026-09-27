@@ -26,10 +26,12 @@ function librarySlotLabel(slot) {
 
 function libraryItemId(item) { return item.id || item.modId; }
 function libraryPriorityValue(item) {
+  const deployedFileName = item?.gameFileName || item?.deployedFileName || item?.fileName;
+  const fileMatch = String(deployedFileName || '').match(/pak(\d{2})_dir\.vpk/i);
+  if (fileMatch) return Number.parseInt(fileMatch[1], 10);
   const explicit = Number(item?.priority);
   if (Number.isFinite(explicit)) return explicit;
-  const match = String(item?.fileName || '').match(/pak(\d{2})_dir\.vpk/i);
-  return match ? Number.parseInt(match[1], 10) : 99;
+  return 99;
 }
 function libraryPriorityLabel(item) {
   const value = libraryPriorityValue(item);
@@ -110,7 +112,7 @@ function renderLibrary() {
     const id = libraryItemId(item);
     const pack = item.type === 'pack';
     const name = item.displayName || item.name || id;
-    const fileName = item.fileName || item.installedFiles?.[0] || '';
+    const fileName = item.gameFileName || item.deployedFileName || item.fileName || item.installedFiles?.[0] || '';
     const checkbox = `<label class="library-check"><input type="checkbox" data-library-select="${libraryEscape(id)}" ${selected.has(id) ? 'checked' : ''}><span></span></label>`;
     const packButton = pack ? `<button class="action secondary library-pack-info" data-pack-content="${libraryEscape(id)}" title="${t('catalog.viewPackContents', 'View Pack contents')}" aria-label="${t('catalog.viewPackContents', 'View Pack contents')}">!</button>` : '';
     const savePackButton = pack ? `<button class="action secondary" data-save-pack="${libraryEscape(id)}">${t('savedPacks.savePack', 'Save pack')}</button>` : '';
