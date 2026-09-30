@@ -487,6 +487,27 @@ class AppService {
   async cancelDownload(id) { return this.downloads.cancel(id); }
   async clearDownloadArchives() { await this.downloads.clear(); return this.snapshot(); }
   async getDownloadArchiveStats() { return this.downloads.getStats(); }
+  async getDownloadArchives() {
+    const archives = await this.downloads.listArchives();
+    return { ...this.snapshot(), archives: archives.map((archive) => {
+      const mod = this.catalog.getMod(archive.id);
+      return { ...archive, name: mod?.name || archive.id, categoryId: mod?.categoryId || 'other', heroLabel: mod?.heroLabel || null, slot: mod?.slot || null, author: mod?.author || null, previewUrl: mod?.previewUrl || null, available: Boolean(mod), installed: Boolean(this.storage.state.installedMods[archive.id]) };
+    }) };
+  }
+  async deleteDownloadArchive(key) { await this.downloads.deleteArchive(key); return this.getDownloadArchives(); }
+  async deleteDownloadArchives(keys) { await this.downloads.deleteArchives(keys); return this.getDownloadArchives(); }
+  async installDownloadArchives(ids) {
+    const uniqueIds = [...new Set((Array.isArray(ids) ? ids : []).filter((id) => typeof id === 'string'))];
+    if (!uniqueIds.length) throw new Error('Select at least one archive');
+    const results = [];
+    for (const id of uniqueIds) {
+      const mod = this.catalog.getMod(id);
+      if (!mod) { results.push({ id, ok: false, error: 'Mod is no longer in the catalog' }); continue; }
+      try { await this.mods.install(mod); results.push({ id, ok: true }); }
+      catch (error) { results.push({ id, ok: false, error: error.message }); }
+    }
+    return { ...this.snapshot(), results };
+  }
   getSettings() { return this.snapshot().settings; }
   async getDiagnostics(logger, app) { return require('../../infrastructure/diagnostics').collectDiagnostics({ service: this, app, logger }); }
   async setSetting(key, value) {

@@ -1,7 +1,7 @@
 function simplifyHeroDirectory() {
   const tools = document.querySelector('.hero-directory-tools');
   const grid = document.querySelector('.hero-grid');
-  if (!tools || !grid) return;
+  if (!tools || !grid || tools.dataset.categoryGrid) return;
   tools.querySelector('.hero-directory-search')?.remove();
   if (tools.dataset.simpleHero) return;
   tools.dataset.simpleHero = '1';

@@ -101,6 +101,10 @@ async function createWindow() {
   register('download:cancel', ({ id }) => service.cancelDownload(id));
   register('downloads:clear', () => service.clearDownloadArchives());
   register('downloads:stats', () => service.getDownloadArchiveStats());
+  register('downloads:list', () => service.getDownloadArchives());
+  register('downloads:delete', ({ key }) => service.deleteDownloadArchive(key));
+  register('downloads:delete-many', ({ keys }) => service.deleteDownloadArchives(keys));
+  register('downloads:install', ({ ids }) => service.installDownloadArchives(ids));
   register('settings:get', () => service.getSettings());
   register('diagnostics:export', async () => {
     const result = await dialog.showSaveDialog(window, { title: 'Export VANTA diagnostics', defaultPath: path.join(app.getPath('downloads'), `VANTA-diagnostics-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`), filters: [{ name: 'ZIP archive', extensions: ['zip'] }] });

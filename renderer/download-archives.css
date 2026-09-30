@@ -1,0 +1,80 @@
+.download-archives-page { display: grid; gap: 20px; padding-bottom: 84px; }
+.download-archives-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
+.download-archives-heading h2 { margin: 0 0 7px; font: 600 27px 'Space Grotesk'; }
+.download-archives-heading p:not(.eyebrow) { margin: 0; color: var(--muted); }
+.download-archive-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 13px; }
+.download-archive-card { position: relative; display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 13px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: linear-gradient(145deg, #1a1a1a, #101010); content-visibility: auto; contain-intrinsic-size: auto 190px; transition: border-color .2s ease, background .2s ease, transform .2s ease; }
+.download-archive-card:hover { border-color: #555; transform: translateY(-1px); }
+.download-archive-card.selected { border-color: var(--accent); background: linear-gradient(145deg, #202322, #131414); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); }
+.download-archive-card > img, .download-archive-preview-empty { width: 104px; height: 104px; border-radius: 5px; object-fit: cover; background: #202020; }
+.download-archive-preview-empty { display: grid; place-items: center; color: #777; font-size: 31px; }
+.download-archive-select { position: absolute; z-index: 2; top: 17px; left: 17px; display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid #ffffff55; border-radius: 6px; background: #090a0dcc; cursor: pointer; }
+.download-archive-select input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.download-archive-select span { width: 13px; height: 13px; border: 1px solid #ffffff88; border-radius: 3px; }
+.download-archive-select input:checked + span { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 3px #101010; }
+.download-archive-select input:focus-visible + span { outline: 2px solid #fff; outline-offset: 2px; }
+.download-archive-info { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 5px; padding-top: 2px; }
+.download-archive-info > strong { max-width: 100%; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.download-archive-info small { max-width: 100%; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.download-archive-installed { color: #a8d9ad; font-size: 11px; }
+.download-archive-missing { color: #e3b36a; font-size: 11px; }
+.download-archive-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.download-archive-actions .action { min-width: 95px; }
+.download-archive-bulk { position: fixed; z-index: 950; right: max(24px, calc((100vw - 1440px) / 2 + 24px)); bottom: 34px; left: max(24px, calc((100vw - 1440px) / 2 + 24px)); display: flex; align-items: center; gap: 10px; max-width: 820px; margin: 0 auto; padding: 12px 14px; border: 1px solid #ffffff1f; border-radius: 12px; background: rgba(22, 23, 24, .94); box-shadow: 0 16px 50px #000b; backdrop-filter: blur(18px); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(14px); transition: opacity .2s ease, transform .2s ease, visibility 0s linear .4s; }
+.download-archive-bulk.has-selection { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0); transition: opacity .28s ease, transform .38s cubic-bezier(.16, 1, .3, 1), visibility 0s; }
+.download-archive-bulk .floating-selection-count { flex: 1; color: var(--text); font-size: 13px; font-weight: 600; }
+.download-archive-bulk .floating-selection-cancel { display: grid; place-items: center; width: 30px; height: 30px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; background: transparent; font-size: 18px; cursor: pointer; }
+.download-archive-bulk .floating-selection-cancel:hover { color: var(--text); border-color: #777; }
+@media (max-width: 640px) { .download-archives-heading { align-items: flex-start; flex-direction: column; }.download-archive-grid { grid-template-columns: 1fr; }.download-archive-bulk { right: 12px; bottom: 24px; left: 12px; gap: 6px; padding: 9px; }.download-archive-bulk .action { padding: 8px; font-size: 11px; } }
+
+/* Keep archive management in step with VANTA's restrained, quick UI motion. */
+.download-archives-page { animation: archives-page-in .46s cubic-bezier(.16, 1, .3, 1) both; }
+.download-archives-heading > div { animation: archives-heading-in .48s cubic-bezier(.16, 1, .3, 1) both; }
+.download-archives-heading > .action { transition: color .2s ease, border-color .2s ease, background .2s ease, transform .24s cubic-bezier(.16, 1, .3, 1), box-shadow .24s ease; }
+.download-archives-heading > .action:hover { transform: translateX(-3px); box-shadow: 0 5px 16px #0005; }
+.download-archives-heading > .action:active { transform: translateX(-1px) scale(.97); }
+.download-archive-card { overflow: hidden; animation: none; transition: border-color .24s ease, background .24s ease, transform .3s cubic-bezier(.16, 1, .3, 1), box-shadow .3s ease; }
+.download-archive-card::after { position: absolute; inset: 0; z-index: 0; border: 1px solid color-mix(in srgb, var(--accent) 62%, transparent); border-radius: inherit; content: ''; opacity: 0; pointer-events: none; transition: opacity .24s ease; }
+.download-archive-card:hover { border-color: #666; box-shadow: 0 8px 18px #0004; transform: translateY(-2px); }
+.download-archive-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent), 0 8px 24px #0004; }
+.download-archive-card.selected::after { opacity: .55; }
+.download-archive-card > img, .download-archive-preview-empty { transition: filter .35s ease, transform .5s cubic-bezier(.16, 1, .3, 1); }
+.download-archive-card:hover > img { filter: saturate(1.08) brightness(1.06); transform: scale(1.055); }
+.download-archive-select { transition: border-color .2s ease, background .2s ease, transform .24s cubic-bezier(.16, 1, .3, 1), box-shadow .2s ease; }
+.download-archive-select:hover { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); transform: scale(1.06); }
+.download-archive-select span { transition: border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s cubic-bezier(.16, 1, .3, 1); }
+.download-archive-select input:checked + span { animation: archive-check-in .24s cubic-bezier(.16, 1, .3, 1) both; }
+.download-archive-info > strong { transition: color .2s ease, transform .24s cubic-bezier(.16, 1, .3, 1); }
+.download-archive-card:hover .download-archive-info > strong { color: #fff; transform: translateX(2px); }
+.download-archive-installed, .download-archive-missing { animation: archive-badge-in .32s cubic-bezier(.16, 1, .3, 1) both; }
+.download-archive-actions .action { transition: color .2s ease, border-color .2s ease, background .2s ease, transform .22s cubic-bezier(.16, 1, .3, 1), box-shadow .22s ease, opacity .2s ease; }
+.download-archive-actions .action:hover:not(:disabled) { box-shadow: 0 5px 14px #0005; transform: translateY(-2px); }
+.download-archive-actions .action:active:not(:disabled) { box-shadow: none; transform: translateY(0) scale(.97); }
+.download-archive-actions .action:disabled { cursor: not-allowed; opacity: .45; }
+.download-archive-actions .action:focus-visible, .download-archives-heading .action:focus-visible, .download-archive-bulk button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.download-archive-bulk { transform: translateY(18px) scale(.97); transition: opacity .28s ease, transform .38s cubic-bezier(.16, 1, .3, 1), border-color .25s ease, box-shadow .25s ease; }
+.download-archive-bulk.has-selection { animation: archive-bulk-in .4s cubic-bezier(.16, 1, .3, 1) both; border-color: color-mix(in srgb, var(--accent) 35%, #ffffff1f); box-shadow: 0 18px 55px #000b, 0 0 24px color-mix(in srgb, var(--accent) 10%, transparent); }
+.download-archive-bulk .floating-selection-count { transition: color .2s ease; }
+.download-archive-bulk .action, .download-archive-bulk .floating-selection-cancel { transition: color .2s ease, border-color .2s ease, background .2s ease, opacity .2s ease, transform .22s cubic-bezier(.16, 1, .3, 1), box-shadow .22s ease; }
+.download-archive-bulk .action:hover:not(:disabled), .download-archive-bulk .floating-selection-cancel:hover { box-shadow: 0 5px 14px #0005; transform: translateY(-2px); }
+.download-archive-bulk .action:active:not(:disabled), .download-archive-bulk .floating-selection-cancel:active { transform: scale(.96); }
+.download-archives-page > .empty { animation: archive-empty-in .5s cubic-bezier(.16, 1, .3, 1) both; }
+.download-archives-more { display: block; min-width: 210px; margin: 2px auto 12px; transition: border-color .2s ease, background .2s ease, transform .2s ease; }
+.download-archives-more:hover { transform: translateY(-2px); }
+@keyframes archives-page-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes archives-heading-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes archive-card-in { from { opacity: 0; transform: translateY(9px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes archive-check-in { from { transform: scale(.72); } 65% { transform: scale(1.18); } to { transform: scale(1); } }
+@keyframes archive-badge-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes archive-bulk-in { from { opacity: 0; transform: translateY(18px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes archive-empty-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.download-archive-card:nth-child(-n+6) { animation: archive-card-in .32s cubic-bezier(.16, 1, .3, 1) both; }
+.download-archive-card:nth-child(2) { animation-delay: 25ms; }
+.download-archive-card:nth-child(3) { animation-delay: 50ms; }
+.download-archive-card:nth-child(4) { animation-delay: 75ms; }
+.download-archive-card:nth-child(5) { animation-delay: 100ms; }
+.download-archive-card:nth-child(6) { animation-delay: 125ms; }
+@media (prefers-reduced-motion: reduce) {
+	.download-archives-page, .download-archives-heading > div, .download-archive-card, .download-archive-installed, .download-archive-missing, .download-archives-page > .empty, .download-archive-bulk.has-selection { animation: none; }
+	.download-archive-card, .download-archive-card *, .download-archive-bulk, .download-archive-bulk * { transition-duration: .01ms !important; transition-delay: 0s !important; }
+}

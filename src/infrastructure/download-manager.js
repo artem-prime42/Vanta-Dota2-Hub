@@ -79,6 +79,44 @@ class DownloadManager {
     return { count: archives.length, bytes: sizes.reduce((total, stat) => total + stat.size, 0), directories: [this.rootDir] };
   }
 
+  async listArchives() {
+    const archives = await Promise.all(this.archiveRoots.map(async (archiveRoot, rootIndex) => {
+      await fsp.mkdir(archiveRoot, { recursive: true });
+      const entries = await fsp.readdir(archiveRoot, { withFileTypes: true });
+      return Promise.all(entries.filter((entry) => entry.isFile() && entry.name.endsWith('.zip')).map(async (entry) => {
+        const id = entry.name.slice(0, -4);
+        if (!/^[a-z0-9][a-z0-9-]*$/i.test(id)) return null;
+        const archivePath = path.join(archiveRoot, entry.name);
+        const stat = await fsp.stat(archivePath).catch(() => null);
+        if (!stat?.isFile()) return null;
+        return { key: `${rootIndex}:${id}`, id, size: stat.size, downloadedAt: stat.mtime.toISOString() };
+      }));
+    }));
+    return archives.flat().filter(Boolean).sort((left, right) => right.downloadedAt.localeCompare(left.downloadedAt));
+  }
+
+  async deleteArchive(key) {
+    return this.deleteArchives([key]);
+  }
+
+  async deleteArchives(keys) {
+    const identifiers = [...new Set(Array.isArray(keys) ? keys : [])].map((key) => {
+      const match = /^(\d+):([a-z0-9][a-z0-9-]*)$/i.exec(String(key || ''));
+      if (!match) throw new Error('Archive identifier is invalid');
+      const rootIndex = Number(match[1]);
+      const id = match[2];
+      const archiveRoot = this.archiveRoots[rootIndex];
+      if (!archiveRoot) throw new Error('Archive not found');
+      return { archiveRoot, id };
+    });
+    await Promise.all(identifiers.map(async ({ archiveRoot, id }) => {
+      const archivePath = path.join(archiveRoot, `${id}.zip`);
+      if (!await this.exists(archivePath)) throw new Error(`Archive not found: ${id}`);
+      await Promise.all([archivePath, `${archivePath}.url`].map((file) => fsp.rm(file, { force: true })));
+    }));
+    return true;
+  }
+
   async exists(file) { try { await fsp.access(file); return true; } catch { return false; } }
 }
 

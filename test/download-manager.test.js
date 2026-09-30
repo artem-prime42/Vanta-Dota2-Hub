@@ -45,3 +45,36 @@ test('download manager clears archives from legacy roots', async () => {
   const clearedStats = await manager.getStats();
   assert.deepEqual({ count: clearedStats.count, bytes: clearedStats.bytes }, { count: 0, bytes: 0 });
 });
+
+test('download manager lists archives and deletes only the selected archive and source URL', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-download-list-'));
+  const manager = new DownloadManager(root);
+  const archivePath = path.join(root, 'downloads', 'hero-mod.zip');
+  await fs.mkdir(path.dirname(archivePath), { recursive: true });
+  await fs.writeFile(archivePath, 'cached archive');
+  await fs.writeFile(`${archivePath}.url`, 'https://example.test/hero-mod.zip');
+  await fs.writeFile(path.join(root, 'downloads', 'other.zip'), 'keep me');
+
+  const archive = (await manager.listArchives()).find((item) => item.id === 'hero-mod');
+  assert.equal(archive.id, 'hero-mod');
+  assert.equal(archive.key, '0:hero-mod');
+  assert.equal(archive.size, 14);
+  await manager.deleteArchive(archive.key);
+  await assert.rejects(fs.access(archivePath));
+  await assert.rejects(fs.access(`${archivePath}.url`));
+  assert.equal(await fs.readFile(path.join(root, 'downloads', 'other.zip'), 'utf8'), 'keep me');
+  await assert.rejects(manager.deleteArchive('../manifest'));
+});
+
+test('download manager deletes multiple selected archives in one safe operation', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-download-delete-many-'));
+  const manager = new DownloadManager(root);
+  const directory = path.join(root, 'downloads');
+  await fs.mkdir(directory, { recursive: true });
+  for (const id of ['first-mod', 'second-mod', 'keep-mod']) await fs.writeFile(path.join(directory, `${id}.zip`), id);
+
+  await assert.rejects(manager.deleteArchives(['0:first-mod', 'invalid']), /invalid/i);
+  assert.equal((await manager.listArchives()).length, 3, 'validate all keys before deleting any archive');
+  await manager.deleteArchives(['0:first-mod', '0:second-mod']);
+  assert.deepEqual((await manager.listArchives()).map((archive) => archive.id), ['keep-mod']);
+});

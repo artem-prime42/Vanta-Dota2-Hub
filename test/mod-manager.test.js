@@ -33,6 +33,9 @@ test('library keeps mods from the shared dota folder visible for every language'
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-library-language-'));
   const service = new AppService({ rootDir: root });
   await service.storage.init();
+  service.gamePath = path.join(root, 'test-game');
+  service.importLegacyLibrary = async () => {};
+  service.mods.syncInstalled = async () => {};
   await service.storage.patch({
     settings: { ...service.storage.state.settings, langSuffix: 'russian' },
     installedMods: {
