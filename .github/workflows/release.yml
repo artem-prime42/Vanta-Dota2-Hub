@@ -7,6 +7,9 @@ on:
     paths:
       - package.json
       - package-lock.json
+      - .github/workflows/release.yml
+      - src/application/special-patch-service.js
+      - test/**
   workflow_dispatch:
 
 permissions:

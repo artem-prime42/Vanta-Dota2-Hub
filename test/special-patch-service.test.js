@@ -135,7 +135,7 @@ test('Windows special patches update win64 signatures and restore the matching b
 });
 
 test('Switching a special patch to Windows restores the previously patched Linux signature file', async (t) => {
-  const fixture = await createFixture(t);
+  const fixture = await createFixture(t, { platform: 'linux' });
   const { service, signatures, windowsSignatures } = fixture;
   const originalLinuxSignatures = await fs.readFile(signatures);
   const originalWindowsSignatures = await fs.readFile(windowsSignatures);

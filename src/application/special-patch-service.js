@@ -351,6 +351,17 @@ class SpecialPatchService {
     catch (error) { await fs.rm(temporary, { force: true }); throw error; }
   }
 
+  async installVpk(sourcePath, targetPath) {
+    const temporary = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      await fs.copyFile(sourcePath, temporary);
+      await fs.rename(temporary, targetPath);
+    } catch (error) {
+      await fs.rm(temporary, { force: true });
+      throw error;
+    }
+  }
+
   async writeJson(filePath, value) { await this.atomicWrite(filePath, `${JSON.stringify(value, null, 2)}\n`); }
 
   assertTransactionPath(filePath) {
@@ -522,7 +533,7 @@ class SpecialPatchService {
         await this.recordTransaction(transactionFiles);
         this.progress(mod.id, 'Writing the special-patch VPK…', 70);
         await fs.mkdir(paths.modDirectory, { recursive: true });
-        await fs.rename(temporaryVpk, paths.modVpk);
+        await this.installVpk(temporaryVpk, paths.modVpk);
         if (staleSignaturePath && staleSignatureBackup && await this.exists(staleSignatureBackup)) {
           await this.atomicWrite(staleSignaturePath, await fs.readFile(staleSignatureBackup));
         }
