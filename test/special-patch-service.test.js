@@ -105,6 +105,9 @@ test('Patcher-compatible helpers inject idempotent search paths and match signat
   assert.equal(signatures.split('\n').at(-2), signatureLine(Buffer.from(once)));
   assert.equal(signaturesMatch(signatures, Buffer.from(once)), true);
   assert.equal(signaturesMatch(signatures, Buffer.from(`${once}\n`)), false);
+  const windowsSignatures = appendSignature('DIGEST:original\r\n', Buffer.from(once), 'win32');
+  assert.ok(windowsSignatures.includes('\r\n'), 'Windows signature databases should retain Windows CRLF line endings');
+  assert.doesNotMatch(windowsSignatures.replace(/\r\n/g, ''), /\n/);
 });
 
 test('items_game replacements are exact and reject missing base item IDs', () => {
@@ -119,18 +122,21 @@ test('Windows special patches update win64 signatures and restore the matching b
   const fixture = await createFixture(t, { platform: 'win32' });
   const { service, signatures, windowsSignatures, gamePath } = fixture;
   const originalLinuxSignatures = await fs.readFile(signatures);
-  const originalWindowsSignatures = await fs.readFile(windowsSignatures);
+  await fs.writeFile(windowsSignatures, 'DIGEST: original Windows signature data\r\n');
+  const originalWindowsSignaturesWithCrlf = await fs.readFile(windowsSignatures);
 
   await service.install(mods[0]);
   const manifest = await service.readSpecialManifest();
   assert.equal(manifest.signaturesRelativePath, path.join('bin', 'win64', 'dota.signatures'));
   assert.deepEqual(await fs.readFile(signatures), originalLinuxSignatures);
-  assert.notDeepEqual(await fs.readFile(windowsSignatures), originalWindowsSignatures);
+  assert.notDeepEqual(await fs.readFile(windowsSignatures), originalWindowsSignaturesWithCrlf);
+  assert.match((await fs.readFile(windowsSignatures, 'utf8')), /\r\n/);
+  assert.doesNotMatch((await fs.readFile(windowsSignatures, 'utf8')).replace(/\r\n/g, ''), /\n/);
   assert.equal((await service.inspect(mods[0], service.storage.state.installedMods['weather-test'])).status, 'updated');
 
   await service.remove('weather-test');
   assert.deepEqual(await fs.readFile(signatures), originalLinuxSignatures);
-  assert.deepEqual(await fs.readFile(windowsSignatures), originalWindowsSignatures);
+  assert.deepEqual(await fs.readFile(windowsSignatures), originalWindowsSignaturesWithCrlf);
   assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), false);
 });
 

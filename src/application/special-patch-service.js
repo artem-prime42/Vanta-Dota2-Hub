@@ -151,11 +151,13 @@ function signaturesMatch(signaturesText, gameinfoBuffer) {
   return lines.at(-1) === signatureLine(gameinfoBuffer);
 }
 
-function appendSignature(signaturesText, gameinfoBuffer) {
+function appendSignature(signaturesText, gameinfoBuffer, platform = process.platform) {
   const expected = signatureLine(gameinfoBuffer);
-  const lines = String(signaturesText || '').replace(/\r/g, '').split('\n').filter((line) => line && !line.startsWith('...\\..\\..\\dota\\gameinfo_branchspecific.gi~SHA1:'));
+  const original = String(signaturesText || '');
+  const lineEnding = /\r\n/.test(original) || (!original.includes('\n') && platform === 'win32') ? '\r\n' : '\n';
+  const lines = original.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter((line) => line && !line.startsWith('...\\..\\..\\dota\\gameinfo_branchspecific.gi~SHA1:'));
   lines.push(expected);
-  return `${lines.join('\n')}\n`;
+  return `${lines.join(lineEnding)}${lineEnding}`;
 }
 
 function readBuildId(text) {
@@ -495,7 +497,7 @@ class SpecialPatchService {
         const signaturesBefore = await fs.readFile(signaturesPath);
         const signaturesText = signaturesBefore.toString('utf8');
         const gameinfoAfter = Buffer.from(ensurePatchSearchPath(gameinfoBefore.toString('utf8')), 'utf8');
-        const signaturesAfter = Buffer.from(appendSignature(signaturesText, gameinfoAfter), 'utf8');
+        const signaturesAfter = Buffer.from(appendSignature(signaturesText, gameinfoAfter, this.platform), 'utf8');
         const previousManifest = await this.readSpecialManifest();
         const backupDirectory = await this.getBackupDirectory(paths.root);
         const backupGameinfo = path.join(backupDirectory, 'gameinfo_branchspecific.gi');

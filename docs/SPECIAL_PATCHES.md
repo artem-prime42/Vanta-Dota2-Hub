@@ -19,6 +19,7 @@ VANTA follows the same item-game override and search-path/signature-hash contrac
 
 - The unmodified `pak01_dir.vpk` is read only; VANTA writes its one-file override to `game/DotaModdingCommunityMods/pak01_dir.vpk`.
 - Original `gameinfo_branchspecific.gi` and runtime-specific `dota.signatures` snapshots are kept under VANTA user data. Windows uses `bin/win64/dota.signatures`; Linux prefers `bin/linuxsteamrt64/dota.signatures`. Existing installs are migrated if the selected runtime signature file changes. A pre-existing Patcher VPK is retained and restored on removal.
+- When VANTA updates `dota.signatures`, it retains the file's existing newline convention; Windows files use CRLF, matching the upstream Patcher's Windows text-mode output.
 - Weather entries replace the same item ID, so one Weather can be active at a time. Towers replace both team IDs as one selection. One Weather and one Towers selection can coexist in the combined override VPK.
 - Install, Update, and Remove are refused while Dota 2 is running; VANTA does not kill or launch the game.
 - File writes are journaled and rolled back on an error. If a game file or managed VPK no longer matches VANTA's recorded hash, removal does not overwrite the changed file. If Steam or another process deletes a VANTA-patched `gameinfo_branchspecific.gi` or changes `dota.signatures`, removal restores only files still owned by VANTA (or missing files) from the original backups.
