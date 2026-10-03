@@ -225,3 +225,21 @@ test('special patch failures are explicit, preserve game files, and running Dota
   assert.deepEqual(await fs.readFile(gameinfo), oldGameinfo);
   assert.deepEqual(await fs.readFile(signatures), oldSignatures);
 });
+
+test('missing gameinfo is rejected before update and uninstall restores missing patch-owned files', async (t) => {
+  const fixture = await createFixture(t);
+  const { service, gameinfo, signatures, gamePath } = fixture;
+  const originalGameinfo = await fs.readFile(gameinfo);
+  const originalSignatures = await fs.readFile(signatures);
+
+  await service.install(mods[0]);
+  await fs.rm(gameinfo);
+  const patchedSignatures = await fs.readFile(signatures);
+  await assert.rejects(service.update(mods[0]), /missing its gameinfo file/);
+  assert.deepEqual(await fs.readFile(signatures), patchedSignatures);
+
+  await service.remove('weather-test');
+  assert.deepEqual(await fs.readFile(gameinfo), originalGameinfo);
+  assert.deepEqual(await fs.readFile(signatures), originalSignatures);
+  await assert.rejects(fs.access(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), { code: 'ENOENT' });
+});

@@ -21,7 +21,8 @@ VANTA follows the same item-game override and search-path/signature-hash contrac
 - Original `gameinfo_branchspecific.gi` and runtime-specific `dota.signatures` snapshots are kept under VANTA user data. Windows uses `bin/win64/dota.signatures`; Linux prefers `bin/linuxsteamrt64/dota.signatures`. Existing installs are migrated if the selected runtime signature file changes. A pre-existing Patcher VPK is retained and restored on removal.
 - Weather entries replace the same item ID, so one Weather can be active at a time. Towers replace both team IDs as one selection. One Weather and one Towers selection can coexist in the combined override VPK.
 - Install, Update, and Remove are refused while Dota 2 is running; VANTA does not kill or launch the game.
-- File writes are journaled and rolled back on an error. If a game file or managed VPK no longer matches VANTA's recorded hash, removal does not overwrite the changed file.
+- File writes are journaled and rolled back on an error. If a game file or managed VPK no longer matches VANTA's recorded hash, removal does not overwrite the changed file. If Steam or another process deletes a VANTA-patched `gameinfo_branchspecific.gi` or changes `dota.signatures`, removal restores only files still owned by VANTA (or missing files) from the original backups.
+- On Windows, VANTA resolves selections such as the game's `dota` subfolder, Dota app folder, or Steam library root to the canonical `game` directory by locating `dota/pak01_dir.vpk`. Startup revalidates a saved path and falls back to Steam auto-detection if it is stale. Weather/Tower install/update refuses to start if `gameinfo_branchspecific.gi` or the runtime signature database is missing; verify Dota 2 files in Steam and re-detect the path before retrying.
 - This modifies game client files and the signature map. It is not represented as VAC-safe; users should understand the risk before installing.
 
 ## State and update detection

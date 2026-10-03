@@ -9,6 +9,30 @@ function libraryPaths(text) {
 
 async function exists(file) { try { await fs.access(file); return true; } catch { return false; } }
 
+function dotaGamePathCandidates(selectedPath, platform = process.platform) {
+  if (!selectedPath) return [];
+  const pathApi = platform === 'win32' ? path.win32 : path;
+  const selected = pathApi.resolve(String(selectedPath).replace(/[\\/]+$/, ''));
+  const candidates = [selected];
+  const basename = pathApi.basename(selected).toLowerCase();
+  if (basename === 'dota') candidates.push(pathApi.dirname(selected));
+  if (basename === 'dota 2 beta') candidates.push(pathApi.join(selected, 'game'));
+  if (basename === 'common') candidates.push(pathApi.join(selected, 'dota 2 beta', 'game'));
+  if (basename === 'steamapps') candidates.push(pathApi.join(selected, 'common', 'dota 2 beta', 'game'));
+  candidates.push(pathApi.join(selected, 'game'));
+  candidates.push(pathApi.join(selected, 'steamapps', 'common', 'dota 2 beta', 'game'));
+  candidates.push(pathApi.join(selected, 'common', 'dota 2 beta', 'game'));
+  return [...new Set(candidates.map((candidate) => pathApi.normalize(candidate)))];
+}
+
+async function resolveDotaGamePath(selectedPath, { platform = process.platform, existsImpl = exists } = {}) {
+  const pathApi = platform === 'win32' ? path.win32 : path;
+  for (const candidate of dotaGamePathCandidates(selectedPath, platform)) {
+    if (await existsImpl(pathApi.join(candidate, 'dota', 'pak01_dir.vpk'))) return candidate;
+  }
+  return null;
+}
+
 async function detectDotaInstallation() {
   const libraries = await discoverSteamRoots({ platform: process.platform, home: os.homedir(), env: process.env });
   const seen = new Set();
@@ -46,7 +70,7 @@ async function detectDota() {
 }
 
 async function validateDota(gamePath) {
-  return Boolean(gamePath && await exists(path.join(gamePath, 'dota/pak01_dir.vpk')));
+  return Boolean(await resolveDotaGamePath(gamePath));
 }
 
-module.exports = { detectDota, detectDotaInstallation, validateDota };
+module.exports = { detectDota, detectDotaInstallation, dotaGamePathCandidates, resolveDotaGamePath, validateDota };

@@ -457,6 +457,10 @@ class SpecialPatchService {
       if (!this.isSpecialPatch(mod)) throw new Error('This catalog entry is not a supported special patch.');
       const paths = this.getDotaPaths();
       if (await this.processRunning()) throw new Error('Close Dota 2 before installing or updating Weather/Tower patches. VANTA will not terminate the game automatically.');
+      for (const [label, filePath] of [['base VPK', paths.pak01], ['gameinfo file', paths.gameinfo]]) {
+        if (!(await this.exists(filePath))) throw new Error(`The selected Dota 2 folder is missing its ${label}: ${filePath}. Re-detect the game path and verify Dota 2 files in Steam before installing Weather/Tower patches.`);
+      }
+      await this.findSignaturesPath(paths);
       const installed = Object.values(this.storage.state.installedMods || {}).filter((record) => record?.modType === 'special_patch');
       const catalogMods = this.getMods();
       const installedCatalogMods = installed.map((record) => catalogMods.find((candidate) => candidate.id === record.id));
@@ -617,16 +621,19 @@ class SpecialPatchService {
         const backupGameinfo = path.join(backupDirectory, 'gameinfo_branchspecific.gi');
         const backupSignatures = await this.findSignatureBackup(backupDirectory, signaturesPath);
         const foreignBackup = path.join(backupDirectory, 'pre-existing-pak01_dir.vpk');
+        const gameinfoShouldRestore = await this.exists(backupGameinfo)
+          && (!(await this.exists(paths.gameinfo)) || gameinfoMatches);
+        const signaturesShouldRestore = await this.exists(backupSignatures)
+          && (!(await this.exists(signaturesPath)) || signaturesMatchOwned);
         const transaction = [paths.modVpk, this.manifestPath];
-        if (gameinfoMatches && signaturesMatchOwned) transaction.push(paths.gameinfo, signaturesPath);
+        if (gameinfoShouldRestore) transaction.push(paths.gameinfo);
+        if (signaturesShouldRestore) transaction.push(signaturesPath);
         await this.recordTransaction(transaction);
         try {
           await fs.rm(paths.modVpk, { force: true });
           if (await this.exists(foreignBackup)) await fs.copyFile(foreignBackup, paths.modVpk);
-          if (gameinfoMatches && signaturesMatchOwned) {
-            if (await this.exists(backupGameinfo)) await this.atomicWrite(paths.gameinfo, await fs.readFile(backupGameinfo));
-            if (await this.exists(backupSignatures)) await this.atomicWrite(signaturesPath, await fs.readFile(backupSignatures));
-          }
+          if (gameinfoShouldRestore) await this.atomicWrite(paths.gameinfo, await fs.readFile(backupGameinfo));
+          if (signaturesShouldRestore) await this.atomicWrite(signaturesPath, await fs.readFile(backupSignatures));
           const installedMods = { ...this.storage.state.installedMods };
           delete installedMods[id];
           await this.storage.patch({ installedMods });

@@ -8,7 +8,7 @@ const { DownloadManager } = require('../../infrastructure/download-manager');
 const { ModManager } = require('../../application/mod-manager');
 const { SpecialPatchService } = require('../../application/special-patch-service');
 const { SavedPackStore } = require('../../infrastructure/saved-pack-store');
-const { detectDota, validateDota } = require('../../infrastructure/steam-detector');
+const { detectDota, resolveDotaGamePath } = require('../../infrastructure/steam-detector');
 const { searchMods } = require('../../core/models');
 const { detectExternalFiles } = require('../../infrastructure/external-files');
 const { HeroGridService } = require('../../infrastructure/hero-grid-service');
@@ -83,10 +83,14 @@ class AppService {
     await this.savedPacks.init();
     await this.mods.init();
     await this.specialPatches.init();
-    this.gamePath = this.storage.state.settings.gamePath || null;
+    const savedGamePath = this.storage.state.settings.gamePath || null;
+    this.gamePath = await resolveDotaGamePath(savedGamePath);
     if (!this.gamePath) {
       const found = await detectDota();
-      if (found) this.gamePath = found.gamePath;
+      if (found) this.gamePath = await resolveDotaGamePath(found.gamePath);
+    }
+    if (this.gamePath && this.gamePath !== savedGamePath) {
+      await this.storage.patch({ settings: { ...this.storage.state.settings, gamePath: this.gamePath } });
     }
     if (this.gamePath) await this.mods.moveInstalledMods(langSuffix);
     const catalog = await this.catalog.load();
@@ -155,7 +159,7 @@ class AppService {
 
   async refreshCatalog() { return this.snapshot(await this.catalog.load({ force: true })); }
   async toggleFavorite(id) { const set = new Set(this.storage.state.favorites); set.has(id) ? set.delete(id) : set.add(id); await this.storage.patch({ favorites: [...set] }); return this.snapshot(); }
-  async setGamePath(gamePath) { if (!(await validateDota(gamePath))) throw new Error('Selected folder is not a valid Dota 2 game directory'); const previousPath = this.gamePath; this.gamePath = gamePath; try { await this.mods.moveInstalledMods(this.storage.state.settings.langSuffix || 'russian'); } catch (error) { this.gamePath = previousPath; throw error; } await this.storage.patch({ settings: { ...this.storage.state.settings, gamePath } }); await this.specialPatches.refreshStates(); return this.snapshot(); }
+  async setGamePath(gamePath) { const resolvedGamePath = await resolveDotaGamePath(gamePath); if (!resolvedGamePath) throw new Error('Could not find dota/pak01_dir.vpk in the selected folder or its standard Steam Dota subfolders. Select Dota 2\game or use Auto detect.'); const previousPath = this.gamePath; this.gamePath = resolvedGamePath; try { await this.mods.moveInstalledMods(this.storage.state.settings.langSuffix || 'russian'); } catch (error) { this.gamePath = previousPath; throw error; } await this.storage.patch({ settings: { ...this.storage.state.settings, gamePath: resolvedGamePath } }); await this.specialPatches.refreshStates(); return this.snapshot(); }
   async detectGame() { const found = await detectDota(); if (found) await this.setGamePath(found.gamePath); return this.snapshot(); }
   async install(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.install(mod); else await this.mods.install(mod); return this.snapshot(); }
   async update(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.update(mod); else await this.mods.update(mod); return this.snapshot(); }

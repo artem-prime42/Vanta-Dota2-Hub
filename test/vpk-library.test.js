@@ -85,6 +85,8 @@ test('legacy record migration continues startup when all library slots are occup
   }
   await fs.writeFile(path.join(gameDir, 'pak10_dir.vpk'), 'legacy one');
   await fs.writeFile(path.join(gameDir, 'pak11_dir.vpk'), 'legacy two');
+  await fs.mkdir(path.join(root, 'game', 'dota'), { recursive: true });
+  await fs.writeFile(path.join(root, 'game', 'dota', 'pak01_dir.vpk'), 'base game marker');
   await storage.patch({
     settings: { ...storage.state.settings, gamePath: path.dirname(gameDir) },
     installedMods: {

@@ -357,6 +357,8 @@ test('saved pack activation links filesystem Library records and avoids duplicat
   const afterSecond = (await fs.readdir(targetRoot)).filter((file) => /^pak\d{2}_dir\.vpk$/i.test(file));
   assert.equal(afterSecond.length, 1);
   const restarted = new AppService({ rootDir: root });
+  await fs.mkdir(path.join(gamePath, 'dota'), { recursive: true });
+  await fs.writeFile(path.join(gamePath, 'dota', 'pak01_dir.vpk'), 'base game marker');
   await restarted.init();
   restarted.gamePath = gamePath;
   assert.equal((await restarted.listSavedPacks()).savedPacks[0].active, true);
