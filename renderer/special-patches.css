@@ -1,0 +1,96 @@
+.special-patch-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #101214;
+  line-height: 0;
+}
+
+.special-patch-preview .details-hero {
+  display: block;
+  width: 100%;
+  max-height: min(58vh, 620px);
+  object-fit: contain;
+}
+
+.special-patch-warning {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0 16px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 190, 92, .3);
+  border-left: 3px solid #e2a64f;
+  border-radius: 8px;
+  background: rgba(226, 166, 79, .075);
+  color: #f0d6ac;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.special-patch-warning strong {
+  color: #ffe2ad;
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.special-patch-warning.needs-update {
+  border-color: rgba(255, 119, 100, .38);
+  border-left-color: #ff7764;
+  background: rgba(255, 119, 100, .09);
+  color: #ffd2ca;
+}
+
+.special-patch-library-row {
+  border-color: rgba(226, 166, 79, .17);
+}
+
+.special-patch-library-state {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  color: #aeb4ba;
+  font-size: 11px;
+}
+
+.special-patch-library-state.needs-update {
+  color: #ffd08a;
+}
+
+.special-patch-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(226, 166, 79, .28);
+  border-radius: 4px;
+  padding: 2px 5px;
+  background: rgba(226, 166, 79, .08);
+  color: #efc27f;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+
+.special-patch-library-error {
+  display: block;
+  max-width: 520px;
+  margin-top: 4px;
+  color: #ff9a8b;
+  white-space: normal;
+}
+
+.special-patch-update-button {
+  min-width: 105px;
+  white-space: nowrap;
+}
+
+.app-modal-confirm .app-modal-message {
+  white-space: pre-line;
+}
+
+@media (max-width: 720px) {
+  .special-patch-library-row .library-mod-actions {
+    flex-wrap: wrap;
+  }
+}

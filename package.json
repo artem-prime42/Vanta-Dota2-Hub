@@ -2,7 +2,7 @@
   "name": "vanta-dota",
   "productName": "VANTA",
   "desktopName": "vanta",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "description": "Independent Dota 2 mod manager with a remote catalog.",
   "author": {
     "name": "VANTA",
@@ -28,10 +28,11 @@
     "release:linux": "electron-builder --linux AppImage --publish always"
   },
   "dependencies": {
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.1",
     "discord-rpc": "^4.0.1",
     "electron-updater": "^6.8.9",
-    "vpk-tools": "^1.0.3"
+    "vpk-tools": "^1.0.3",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "electron": "^33.4.11",
@@ -68,7 +69,9 @@
       ],
       "icon": "build/installer/vanta.ico",
       "artifactName": "VANTA-Setup-${version}.${ext}",
-      "publish": ["github"]
+      "publish": [
+        "github"
+      ]
     },
     "linux": {
       "target": [
@@ -84,7 +87,9 @@
       "category": "Utility",
       "synopsis": "Dota 2 Mod Manager",
       "description": "Independent Dota 2 mod manager with a remote catalog.",
-      "publish": ["github"]
+      "publish": [
+        "github"
+      ]
     },
     "nsis": {
       "oneClick": false,

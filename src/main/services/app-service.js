@@ -6,6 +6,7 @@ const { JsonStorage } = require('../../infrastructure/storage');
 const { CatalogClient } = require('../../infrastructure/catalog-client');
 const { DownloadManager } = require('../../infrastructure/download-manager');
 const { ModManager } = require('../../application/mod-manager');
+const { SpecialPatchService } = require('../../application/special-patch-service');
 const { SavedPackStore } = require('../../infrastructure/saved-pack-store');
 const { detectDota, validateDota } = require('../../infrastructure/steam-detector');
 const { searchMods } = require('../../core/models');
@@ -35,7 +36,7 @@ const HIDDEN_AUTHORS = /^unknown(?: author)?$/i;
 
 const SECTION_CATEGORIES = {
   heroes: ['heroes', 'hero-items', 'herofx'],
-  world: ['terrains', 'trees', 'river', 'creeps', 'towers', 'roshan', 'ancient', 'tormentor', 'wards', 'couriers'],
+  world: ['terrains', 'trees', 'river', 'creeps', 'towers', 'weather', 'roshan', 'ancient', 'tormentor', 'wards', 'couriers'],
   interface: ['backgrounds', 'huds', 'emblems', 'versus-screens', 'item-icons', 'ranks', 'pings', 'cursors', 'announcers', 'mega-kill', 'music', 'packs'],
   effects: ['shaders', 'ti-bp-effects', 'item-effects', 'ranged-attack', 'high-five', 'creep-deny'],
   other: ['optimization', 'other', 'sites', 'sounds', 'hero-sounds', 'pedestal'],
@@ -68,6 +69,7 @@ class AppService {
     this.activeVpkHashCache = null;
     this.gamePath = null;
     this.mods = new ModManager({ rootDir, storage: this.storage, downloads: this.downloads, getGamePath: () => this.gamePath, getLanguageFolder: () => this.storage.state.settings.langSuffix || 'dota', onProgress });
+    this.specialPatches = new SpecialPatchService({ rootDir, storage: this.storage, getGamePath: () => this.gamePath, getMods: () => this.catalog.mods, onProgress });
     this.heroGrids = new HeroGridService({ rootDir, storage: this.storage, getGamePath: () => this.gamePath, getLanguageFolder: () => this.storage.state.settings.langSuffix || 'russian' });
   }
 
@@ -80,6 +82,7 @@ class AppService {
     }
     await this.savedPacks.init();
     await this.mods.init();
+    await this.specialPatches.init();
     this.gamePath = this.storage.state.settings.gamePath || null;
     if (!this.gamePath) {
       const found = await detectDota();
@@ -87,6 +90,7 @@ class AppService {
     }
     if (this.gamePath) await this.mods.moveInstalledMods(langSuffix);
     const catalog = await this.catalog.load();
+    await this.specialPatches.refreshStates();
     return this.snapshot(catalog);
   }
 
@@ -102,7 +106,14 @@ class AppService {
   }
 
   snapshot(catalog = { mods: this.catalog.mods, meta: this.catalog.meta }) {
-    return { ...catalog, installed: this.storage.state.installedMods, packMembership: this.getPackMembership(), favorites: this.storage.state.favorites, settings: { ...this.storage.state.settings, discordAppId: DISCORD_APP_ID }, gamePath: this.gamePath, authors: this.getAuthors(), discordAppId: DISCORD_APP_ID, appVersion: this.appVersion || null };
+    const installed = { ...this.storage.state.installedMods };
+    for (const [id, record] of Object.entries(installed)) {
+      if (record?.modType === 'special_patch') {
+        const runtime = this.specialPatches.getState(id, record);
+        if (runtime.status === 'updating') installed[id] = { ...record, specialPatchState: runtime.status, requiresPatchUpdate: true };
+      }
+    }
+    return { ...catalog, installed, packMembership: this.getPackMembership(), favorites: this.storage.state.favorites, settings: { ...this.storage.state.settings, discordAppId: DISCORD_APP_ID }, gamePath: this.gamePath, authors: this.getAuthors(), discordAppId: DISCORD_APP_ID, appVersion: this.appVersion || null };
   }
 
   getAuthors() {
@@ -127,6 +138,7 @@ class AppService {
   }
 
   async getCatalog({ query = '', category = 'all', section = 'all', author = '', hero = '', favoriteOnly = false, installedOnly = false, updatesOnly = false } = {}) {
+    await this.specialPatches.refreshStates();
     const mods = searchMods(this.catalog.mods, query, { category }).filter((mod) => {
       if (section !== 'all' && !(SECTION_CATEGORIES[section] || []).includes(mod.categoryId)) return false;
       if (author && mod.author.toLowerCase() !== author.toLowerCase()) return false;
@@ -134,7 +146,7 @@ class AppService {
       const installed = this.storage.state.installedMods[mod.id];
       if (favoriteOnly && !this.storage.state.favorites.includes(mod.id)) return false;
       if (installedOnly && !installed) return false;
-      if (updatesOnly && (!installed || installed.version === mod.version)) return false;
+      if (updatesOnly && (!installed || (mod.modType === 'special_patch' ? !installed.requiresPatchUpdate && installed.currentVersion === mod.currentVersion : installed.version === mod.version))) return false;
       return true;
     });
     const categories = section === 'all' ? this.catalog.getCategories() : (SECTION_CATEGORIES[section] || []).filter((id) => this.catalog.mods.some((mod) => mod.categoryId === id));
@@ -143,12 +155,12 @@ class AppService {
 
   async refreshCatalog() { return this.snapshot(await this.catalog.load({ force: true })); }
   async toggleFavorite(id) { const set = new Set(this.storage.state.favorites); set.has(id) ? set.delete(id) : set.add(id); await this.storage.patch({ favorites: [...set] }); return this.snapshot(); }
-  async setGamePath(gamePath) { if (!(await validateDota(gamePath))) throw new Error('Selected folder is not a valid Dota 2 game directory'); const previousPath = this.gamePath; this.gamePath = gamePath; try { await this.mods.moveInstalledMods(this.storage.state.settings.langSuffix || 'russian'); } catch (error) { this.gamePath = previousPath; throw error; } await this.storage.patch({ settings: { ...this.storage.state.settings, gamePath } }); return this.snapshot(); }
+  async setGamePath(gamePath) { if (!(await validateDota(gamePath))) throw new Error('Selected folder is not a valid Dota 2 game directory'); const previousPath = this.gamePath; this.gamePath = gamePath; try { await this.mods.moveInstalledMods(this.storage.state.settings.langSuffix || 'russian'); } catch (error) { this.gamePath = previousPath; throw error; } await this.storage.patch({ settings: { ...this.storage.state.settings, gamePath } }); await this.specialPatches.refreshStates(); return this.snapshot(); }
   async detectGame() { const found = await detectDota(); if (found) await this.setGamePath(found.gamePath); return this.snapshot(); }
-  async install(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); await this.mods.install(mod); return this.snapshot(); }
-  async update(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); await this.mods.update(mod); return this.snapshot(); }
-  async uninstall(id) { await this.mods.uninstall(id); return this.snapshot(); }
-  async setModEnabled(id, enabled) { await this.mods.setEnabled(id, enabled); return this.snapshot(); }
+  async install(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.install(mod); else await this.mods.install(mod); return this.snapshot(); }
+  async update(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.update(mod); else await this.mods.update(mod); return this.snapshot(); }
+  async uninstall(id) { if (this.storage.state.installedMods[id]?.modType === 'special_patch') await this.specialPatches.remove(id); else await this.mods.uninstall(id); return this.snapshot(); }
+  async setModEnabled(id, enabled) { if (this.storage.state.installedMods[id]?.modType === 'special_patch') throw new Error('Special patches cannot be toggled like VPK mods. Remove the patch from the Library instead.'); await this.mods.setEnabled(id, enabled); return this.snapshot(); }
   async mergeMods(ids, name) { await this.mods.merge(ids, name); return this.getLibrary(); }
   async reorderLibrary(ids) { await this.mods.reorder(ids); return this.snapshot(); }
   async renamePack(id, name) { await this.mods.renamePack(id, name); return this.getLibrary(); }
@@ -267,6 +279,7 @@ class AppService {
     if (!this.gamePath) { const found = await detectDota(); if (found) this.gamePath = found.gamePath; }
     await this.importLegacyLibrary(languageFolder);
     await this.mods.syncInstalled();
+    await this.specialPatches.refreshStates();
     const allInstalled = Object.values(this.storage.state.installedMods);
     const installed = allInstalled.filter((mod) => languageFolderMatches(mod.languageFolder, languageFolder));
     const ownedFiles = installed.flatMap((mod) => {
@@ -503,7 +516,7 @@ class AppService {
     for (const id of uniqueIds) {
       const mod = this.catalog.getMod(id);
       if (!mod) { results.push({ id, ok: false, error: 'Mod is no longer in the catalog' }); continue; }
-      try { await this.mods.install(mod); results.push({ id, ok: true }); }
+      try { await this.install(id); results.push({ id, ok: true }); }
       catch (error) { results.push({ id, ok: false, error: error.message }); }
     }
     return { ...this.snapshot(), results };

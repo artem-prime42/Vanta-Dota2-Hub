@@ -46,7 +46,7 @@ class CatalogClient {
     const mods = flattenCatalog(payload);
     if (!mods.length) throw new Error('Catalog response contained no valid mods');
     await fs.writeFile(this.cacheFile, JSON.stringify(payload));
-    this.meta = { revision: response.headers.get('etag') || String(Date.now()), updatedAt: new Date().toISOString(), offline: false };
+    this.meta = { revision: response.headers.get('etag') || String(Date.now()), updatedAt: new Date().toISOString(), offline: false, source: 'remote' };
     await fs.writeFile(this.metaFile, JSON.stringify(this.meta));
     this.mods = mods;
     return mods;

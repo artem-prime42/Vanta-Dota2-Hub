@@ -4,7 +4,7 @@ function alignPreviewDownloads() {
   const title = body?.querySelector('h2')?.textContent.trim();
   if (!body || !actions || !title || actions.querySelector('.details-download-pill')) return;
   const mod = state.data.mods?.find((item) => item.name === title);
-  if (!mod) return;
+  if (!mod || mod.modType === 'special_patch') return;
   const pill = document.createElement('span');
   pill.className = 'details-download-pill';
   const language = document.body.dataset.uiLanguage === 'ru' ? 'ru' : 'en';
