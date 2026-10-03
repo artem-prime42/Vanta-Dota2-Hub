@@ -179,7 +179,7 @@ async function isDotaRunning(platform = process.platform) {
 }
 
 class SpecialPatchService {
-  constructor({ rootDir, storage, getGamePath, getMods, fetchImpl = fetch, onProgress = () => {}, processRunning = isDotaRunning }) {
+  constructor({ rootDir, storage, getGamePath, getMods, fetchImpl = fetch, onProgress = () => {}, processRunning = isDotaRunning, platform = process.platform }) {
     this.rootDir = rootDir;
     this.storage = storage;
     this.getGamePath = getGamePath;
@@ -187,6 +187,7 @@ class SpecialPatchService {
     this.fetchImpl = fetchImpl;
     this.onProgress = onProgress;
     this.processRunning = processRunning;
+    this.platform = platform;
     this.queue = Promise.resolve();
     this.runtimeStates = new Map();
     this.stateDirectory = path.join(rootDir, 'database', 'special-patches');
@@ -252,7 +253,8 @@ class SpecialPatchService {
   }
 
   async findSignaturesPath(paths) {
-    const candidates = ['linuxsteamrt64', 'win64'].map((folder) => path.join(paths.binRoot, folder, 'dota.signatures'));
+    const folders = this.platform === 'win32' ? ['win64', 'linuxsteamrt64'] : ['linuxsteamrt64', 'win64'];
+    const candidates = folders.map((folder) => path.join(paths.binRoot, folder, 'dota.signatures'));
     for (const candidate of candidates) { try { await fs.access(candidate); return candidate; } catch {} }
     throw new Error('Dota dota.signatures was not found. Verify Dota 2 files in Steam and try again.');
   }
@@ -326,6 +328,18 @@ class SpecialPatchService {
     const directory = path.join(this.stateDirectory, 'backups', key);
     await fs.mkdir(directory, { recursive: true });
     return directory;
+  }
+
+  getSignatureBackupPath(backupDirectory, signaturesPath) {
+    const platformFolder = path.basename(path.dirname(signaturesPath));
+    return path.join(backupDirectory, `dota.signatures-${platformFolder}`);
+  }
+
+  async findSignatureBackup(backupDirectory, signaturesPath) {
+    const platformBackup = this.getSignatureBackupPath(backupDirectory, signaturesPath);
+    if (await this.exists(platformBackup)) return platformBackup;
+    const legacyBackup = path.join(backupDirectory, 'dota.signatures');
+    return await this.exists(legacyBackup) ? legacyBackup : platformBackup;
   }
 
   async exists(filePath) { try { await fs.access(filePath); return true; } catch { return false; } }
@@ -470,24 +484,48 @@ class SpecialPatchService {
         const previousManifest = await this.readSpecialManifest();
         const backupDirectory = await this.getBackupDirectory(paths.root);
         const backupGameinfo = path.join(backupDirectory, 'gameinfo_branchspecific.gi');
-        const backupSignatures = path.join(backupDirectory, 'dota.signatures');
+        const backupSignatures = this.getSignatureBackupPath(backupDirectory, signaturesPath);
         const gameinfoHasPatchPath = gameinfoBefore.toString('utf8').includes(PATCH_MARKER);
         const signaturesHavePatchLine = signaturesText.split(/\r?\n/).some((line) => line.startsWith('...\\..\\..\\dota\\gameinfo_branchspecific.gi~SHA1:'));
+        const previousSignatureRelativePath = String(previousManifest?.signaturesRelativePath || '').replace(/\\/g, '/');
+        const previousSignaturePath = previousManifest?.gamePath === paths.root
+          && /^bin\/(?:linuxsteamrt64|win64)\/dota\.signatures$/i.test(previousSignatureRelativePath)
+          ? path.resolve(paths.root, previousSignatureRelativePath)
+          : null;
+        const staleSignaturePath = previousSignaturePath
+          && previousSignaturePath !== signaturesPath
+          && await this.exists(previousSignaturePath)
+          && await hashFile(previousSignaturePath) === previousManifest.signaturesHash
+          ? previousSignaturePath
+          : null;
+        const staleSignatureBackup = staleSignaturePath
+          ? await this.findSignatureBackup(backupDirectory, staleSignaturePath)
+          : null;
         const vpkBeforeExists = await this.exists(paths.modVpk);
         const vpkBefore = vpkBeforeExists ? await fs.readFile(paths.modVpk) : null;
         const ownsExistingVpk = Boolean(previousManifest?.gamePath === paths.root && previousManifest?.modVpkHash && vpkBefore && await hashBuffer(vpkBefore) === previousManifest.modVpkHash);
         if (!gameinfoHasPatchPath || !(await this.exists(backupGameinfo))) await this.atomicWrite(backupGameinfo, gameinfoBefore);
-        if (!signaturesHavePatchLine || !(await this.exists(backupSignatures))) await this.atomicWrite(backupSignatures, signaturesBefore);
+        if (!(await this.exists(backupSignatures))) {
+          if (!signaturesHavePatchLine) await this.atomicWrite(backupSignatures, signaturesBefore);
+          else if (previousSignaturePath === signaturesPath) {
+            const legacyBackup = path.join(backupDirectory, 'dota.signatures');
+            if (await this.exists(legacyBackup)) await fs.copyFile(legacyBackup, backupSignatures);
+          }
+        }
         if (vpkBefore && !ownsExistingVpk) {
           const foreignBackup = path.join(backupDirectory, 'pre-existing-pak01_dir.vpk');
           if (!(await this.exists(foreignBackup))) await fs.copyFile(paths.modVpk, foreignBackup);
         }
         previousInstalledMods = { ...(this.storage.state.installedMods || {}) };
         transactionFiles = [paths.modVpk, paths.gameinfo, signaturesPath, this.manifestPath];
+        if (staleSignaturePath && staleSignatureBackup && await this.exists(staleSignatureBackup)) transactionFiles.push(staleSignaturePath);
         await this.recordTransaction(transactionFiles);
         this.progress(mod.id, 'Writing the special-patch VPK…', 70);
         await fs.mkdir(paths.modDirectory, { recursive: true });
         await fs.rename(temporaryVpk, paths.modVpk);
+        if (staleSignaturePath && staleSignatureBackup && await this.exists(staleSignatureBackup)) {
+          await this.atomicWrite(staleSignaturePath, await fs.readFile(staleSignatureBackup));
+        }
         await this.atomicWrite(paths.gameinfo, gameinfoAfter);
         await this.atomicWrite(signaturesPath, signaturesAfter);
         const finalVpkHash = await hashFile(paths.modVpk);
@@ -555,7 +593,10 @@ class SpecialPatchService {
       if (await this.processRunning()) throw new Error('Close Dota 2 before removing a Weather/Tower patch. VANTA will not terminate the game automatically.');
       const manifest = await this.readSpecialManifest();
       if (manifest?.gamePath === paths.root) {
-        const signaturesPath = path.resolve(paths.root, manifest.signaturesRelativePath || path.join('bin', 'linuxsteamrt64', 'dota.signatures'));
+        const fallbackSignaturesPath = this.platform === 'win32'
+          ? path.join('bin', 'win64', 'dota.signatures')
+          : path.join('bin', 'linuxsteamrt64', 'dota.signatures');
+        const signaturesPath = path.resolve(paths.root, manifest.signaturesRelativePath || fallbackSignaturesPath);
         if (!signaturesPath.startsWith(`${paths.root}${path.sep}`)) throw new Error('The special-patch manifest contains an unsafe signature-file path. No game files were changed.');
         const matches = await this.exists(paths.modVpk) && await hashFile(paths.modVpk) === manifest.modVpkHash;
         const gameinfoMatches = await this.exists(paths.gameinfo) && await hashFile(paths.gameinfo) === manifest.gameinfoHash;
@@ -563,7 +604,7 @@ class SpecialPatchService {
         if (!matches) throw new Error('The special-patch VPK changed outside VANTA. It was left untouched; verify Dota files before removing the Library entry.');
         const backupDirectory = await this.getBackupDirectory(paths.root);
         const backupGameinfo = path.join(backupDirectory, 'gameinfo_branchspecific.gi');
-        const backupSignatures = path.join(backupDirectory, 'dota.signatures');
+        const backupSignatures = await this.findSignatureBackup(backupDirectory, signaturesPath);
         const foreignBackup = path.join(backupDirectory, 'pre-existing-pak01_dir.vpk');
         const transaction = [paths.modVpk, this.manifestPath];
         if (gameinfoMatches && signaturesMatchOwned) transaction.push(paths.gameinfo, signaturesPath);

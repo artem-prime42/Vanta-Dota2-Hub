@@ -45,15 +45,17 @@ async function writeBaseVpk(filePath, text) {
   writer.write(filePath);
 }
 
-async function createFixture(t) {
+async function createFixture(t, { platform = process.platform } = {}) {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-special-patch-'));
   t.after(() => fs.rm(temporary, { recursive: true, force: true }));
   const dataRoot = path.join(temporary, 'vanta-data');
   const gamePath = path.join(temporary, 'steamapps', 'common', 'dota 2 beta', 'game');
   const dotaPath = path.join(gamePath, 'dota');
   const binPath = path.join(gamePath, 'bin', 'linuxsteamrt64');
+  const windowsBinPath = path.join(gamePath, 'bin', 'win64');
   await fs.mkdir(dotaPath, { recursive: true });
   await fs.mkdir(binPath, { recursive: true });
+  await fs.mkdir(windowsBinPath, { recursive: true });
   await fs.mkdir(path.dirname(path.dirname(path.dirname(gamePath))), { recursive: true });
   await fs.writeFile(path.join(path.dirname(path.dirname(path.dirname(gamePath))), 'appmanifest_570.acf'), '"AppState" { "buildid" "100" }');
   const pak01 = path.join(dotaPath, 'pak01_dir.vpk');
@@ -61,7 +63,9 @@ async function createFixture(t) {
   const gameinfo = path.join(dotaPath, 'gameinfo_branchspecific.gi');
   await fs.writeFile(gameinfo, 'FileSystem\n{\n\tSearchPaths\n\t{\n\t\tGame\t\tdota\n\t}\n}\n');
   const signatures = path.join(binPath, 'dota.signatures');
+  const windowsSignatures = path.join(windowsBinPath, 'dota.signatures');
   await fs.writeFile(signatures, 'original signature data\n');
+  await fs.writeFile(windowsSignatures, 'original Windows signature data\n');
   const storage = new JsonStorage(dataRoot);
   await storage.init();
   const definitions = new Map([['https://patch.test/Snow.txt', weatherText], ['https://patch.test/Towers_Radiant.txt', radiantText], ['https://patch.test/Towers_Dire.txt', direText]]);
@@ -71,6 +75,7 @@ async function createFixture(t) {
     storage,
     getGamePath: () => gamePath,
     getMods: () => mods,
+    platform,
     processRunning: async () => false,
     fetchImpl: async (url) => definitions.has(url)
       ? new Response(definitions.get(url), { status: 200 })
@@ -78,7 +83,7 @@ async function createFixture(t) {
     onProgress: (event) => progress.push(event),
   });
   await service.init();
-  return { dataRoot, gamePath, dotaPath, pak01, gameinfo, signatures, storage, service, progress, definitions };
+  return { dataRoot, gamePath, dotaPath, pak01, gameinfo, signatures, windowsSignatures, storage, service, progress, definitions };
 }
 
 test('Patcher-compatible helpers inject idempotent search paths and match signature hashes', () => {
@@ -108,6 +113,45 @@ test('items_game replacements are exact and reject missing base item IDs', () =>
   assert.match(result, /Default Weather/);
   assert.doesNotMatch(result, /Original Weather/);
   assert.throws(() => replaceItemEntries(base, new Map([['999', { id: '999', content: '"999" { "name" "missing" }' }]])), /does not contain required item 999/);
+});
+
+test('Windows special patches update win64 signatures and restore the matching backup', async (t) => {
+  const fixture = await createFixture(t, { platform: 'win32' });
+  const { service, signatures, windowsSignatures, gamePath } = fixture;
+  const originalLinuxSignatures = await fs.readFile(signatures);
+  const originalWindowsSignatures = await fs.readFile(windowsSignatures);
+
+  await service.install(mods[0]);
+  const manifest = await service.readSpecialManifest();
+  assert.equal(manifest.signaturesRelativePath, path.join('bin', 'win64', 'dota.signatures'));
+  assert.deepEqual(await fs.readFile(signatures), originalLinuxSignatures);
+  assert.notDeepEqual(await fs.readFile(windowsSignatures), originalWindowsSignatures);
+  assert.equal((await service.inspect(mods[0], service.storage.state.installedMods['weather-test'])).status, 'updated');
+
+  await service.remove('weather-test');
+  assert.deepEqual(await fs.readFile(signatures), originalLinuxSignatures);
+  assert.deepEqual(await fs.readFile(windowsSignatures), originalWindowsSignatures);
+  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), false);
+});
+
+test('Switching a special patch to Windows restores the previously patched Linux signature file', async (t) => {
+  const fixture = await createFixture(t);
+  const { service, signatures, windowsSignatures } = fixture;
+  const originalLinuxSignatures = await fs.readFile(signatures);
+  const originalWindowsSignatures = await fs.readFile(windowsSignatures);
+
+  await service.install(mods[0]);
+  assert.notDeepEqual(await fs.readFile(signatures), originalLinuxSignatures);
+  service.platform = 'win32';
+  await service.update(mods[0]);
+
+  assert.deepEqual(await fs.readFile(signatures), originalLinuxSignatures);
+  assert.notDeepEqual(await fs.readFile(windowsSignatures), originalWindowsSignatures);
+  assert.equal((await service.readSpecialManifest()).signaturesRelativePath, path.join('bin', 'win64', 'dota.signatures'));
+
+  await service.remove('weather-test');
+  assert.deepEqual(await fs.readFile(signatures), originalLinuxSignatures);
+  assert.deepEqual(await fs.readFile(windowsSignatures), originalWindowsSignatures);
 });
 
 test('special patches install/update/remove transactionally, combine weather and towers, detect game updates, and persist status', async (t) => {
