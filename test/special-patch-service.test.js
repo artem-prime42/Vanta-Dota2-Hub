@@ -209,10 +209,11 @@ test('Windows and Linux use upstream Source 2 relative mounts without cross-plat
 test('Windows Weather install builds valid gameinfo, VPK, and matching win64 signatures', async (t) => {
   const fixture = await createFixture(t, { platform: 'win32', gameinfoText: WINDOWS_GAMEINFO_BASELINE });
   const { service, gameinfo, signatures, windowsSignatures, gamePath } = fixture;
+  // The service canonicalizes its root; Windows realpath can normalize drive/path casing.
   const paths = service.getDotaPaths();
-  assert.equal(path.relative(gamePath, paths.gameinfo), path.join('dota', 'gameinfo_branchspecific.gi'));
-  assert.equal(path.relative(gamePath, paths.modVpk), path.join('DotaModdingCommunityMods', 'pak01_dir.vpk'));
-  assert.equal(path.relative(gamePath, windowsSignatures), path.join('bin', 'win64', 'dota.signatures'));
+  assert.equal(path.relative(paths.root, paths.gameinfo), path.join('dota', 'gameinfo_branchspecific.gi'));
+  assert.equal(path.relative(paths.root, paths.modVpk), path.join('DotaModdingCommunityMods', 'pak01_dir.vpk'));
+  assert.equal(path.relative(paths.root, windowsSignatures), path.join('bin', 'win64', 'dota.signatures'));
   const originalWindowsSignatures = await fs.readFile(windowsSignatures);
   const originalLinuxSignatures = await fs.readFile(signatures);
 
@@ -423,13 +424,16 @@ test('Windows Weather remove restores baseline gameinfo and win64 signatures and
 test('Windows Weather rollback restores exact game files and leaves no VPK aliases after a signature write failure', async (t) => {
   const fixture = await createFixture(t, { platform: 'win32', gameinfoText: WINDOWS_GAMEINFO_BASELINE });
   const { service, storage, gameinfo, windowsSignatures, signatures, gamePath } = fixture;
+  const paths = service.getDotaPaths();
+  // Intercept the exact canonical target the service will pass to atomicWrite().
+  const targetSignatures = await service.findSignaturesPath(paths);
   const originalGameinfo = await fs.readFile(gameinfo);
   const originalWindowsSignatures = await fs.readFile(windowsSignatures);
   const originalLinuxSignatures = await fs.readFile(signatures);
   const originalAtomicWrite = service.atomicWrite.bind(service);
   let failedOnce = false;
   service.atomicWrite = async (filePath, data) => {
-    if (filePath === windowsSignatures && !failedOnce) {
+    if (filePath === targetSignatures && !failedOnce) {
       failedOnce = true;
       const error = new Error('injected Windows signature write failure');
       error.code = 'EIO';
@@ -829,12 +833,15 @@ test('uninstall removes exact VANTA edits when original backups are corrupted', 
 test('a signatures write failure rolls back the earlier VPK and gameinfo writes', async (t) => {
   const fixture = await createFixture(t, { platform: 'linux' });
   const { service, storage, gameinfo, signatures, gamePath } = fixture;
+  const paths = service.getDotaPaths();
+  // Use the service-resolved target rather than the fixture's original path spelling.
+  const targetSignatures = await service.findSignaturesPath(paths);
   const originalGameinfo = await fs.readFile(gameinfo);
   const originalSignatures = await fs.readFile(signatures);
   const originalAtomicWrite = service.atomicWrite.bind(service);
   let failedOnce = false;
   service.atomicWrite = async (filePath, data) => {
-    if (filePath === signatures && !failedOnce) {
+    if (filePath === targetSignatures && !failedOnce) {
       failedOnce = true;
       const error = new Error('injected signatures write failure');
       error.code = 'EIO';
