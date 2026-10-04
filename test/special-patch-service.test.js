@@ -59,6 +59,16 @@ const mods = [
   },
 ];
 
+function normalizedPathForComparison(value, platform = process.platform) {
+  const normalized = String(value).replace(/\\/g, '/');
+  return platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function samePathForPlatform(left, right, platform = process.platform) {
+  return normalizedPathForComparison(path.resolve(left), platform)
+    === normalizedPathForComparison(path.resolve(right), platform);
+}
+
 function makeBaseItemsGame(revision = 'base-one') {
   return `"items"\n{\n\t"store_currency_pricepoints"\n\t{\n\t\t"1" "${revision}"\n\t}\n\t"555" { "name" "Original Weather" }\n\t"677" { "name" "Original Radiant" }\n\t"678" { "name" "Original Dire" }\n}\n`;
 }
@@ -211,9 +221,9 @@ test('Windows Weather install builds valid gameinfo, VPK, and matching win64 sig
   const { service, gameinfo, signatures, windowsSignatures, gamePath } = fixture;
   // The service canonicalizes its root; Windows realpath can normalize drive/path casing.
   const paths = service.getDotaPaths();
-  assert.equal(path.relative(paths.root, paths.gameinfo), path.join('dota', 'gameinfo_branchspecific.gi'));
-  assert.equal(path.relative(paths.root, paths.modVpk), path.join('DotaModdingCommunityMods', 'pak01_dir.vpk'));
-  assert.equal(path.relative(paths.root, windowsSignatures), path.join('bin', 'win64', 'dota.signatures'));
+  assert.equal(normalizedPathForComparison(path.relative(paths.root, paths.gameinfo), service.platform), 'dota/gameinfo_branchspecific.gi');
+  assert.equal(normalizedPathForComparison(path.relative(paths.root, paths.modVpk), service.platform), 'dotamoddingcommunitymods/pak01_dir.vpk');
+  assert.equal(normalizedPathForComparison(path.relative(paths.root, windowsSignatures), service.platform), 'bin/win64/dota.signatures');
   const originalWindowsSignatures = await fs.readFile(windowsSignatures);
   const originalLinuxSignatures = await fs.readFile(signatures);
 
@@ -433,7 +443,7 @@ test('Windows Weather rollback restores exact game files and leaves no VPK alias
   const originalAtomicWrite = service.atomicWrite.bind(service);
   let failedOnce = false;
   service.atomicWrite = async (filePath, data) => {
-    if (filePath === targetSignatures && !failedOnce) {
+    if (samePathForPlatform(filePath, targetSignatures, service.platform) && !failedOnce) {
       failedOnce = true;
       const error = new Error('injected Windows signature write failure');
       error.code = 'EIO';
@@ -841,7 +851,7 @@ test('a signatures write failure rolls back the earlier VPK and gameinfo writes'
   const originalAtomicWrite = service.atomicWrite.bind(service);
   let failedOnce = false;
   service.atomicWrite = async (filePath, data) => {
-    if (filePath === targetSignatures && !failedOnce) {
+    if (samePathForPlatform(filePath, targetSignatures, service.platform) && !failedOnce) {
       failedOnce = true;
       const error = new Error('injected signatures write failure');
       error.code = 'EIO';
