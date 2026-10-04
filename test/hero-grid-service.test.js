@@ -4,6 +4,7 @@ const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
 const { JsonStorage } = require('../src/infrastructure/storage');
+const { HeroGridInstaller } = require('../src/infrastructure/hero-grid-installer');
 const { HeroGridService, validateGrid } = require('../src/infrastructure/hero-grid-service');
 
 test('bundled D2PT hero grids expose valid and different role data', async () => {
@@ -37,7 +38,7 @@ test('applying a hero grid writes an atomic config, backup, and persistent selec
   await fs.writeFile(target, '{"custom":true}');
   const storage = new JsonStorage(root);
   await storage.init();
-  const service = new HeroGridService({ storage, getGamePath: () => gamePath });
+  const service = new HeroGridService({ storage, getGamePath: () => gamePath, processRunningCheck: async () => false });
   const result = await service.apply({ patch: '7.41f', mode: 'high-winrate', role: 'carry' });
   const installed = JSON.parse(await fs.readFile(target, 'utf8'));
   const backups = (await fs.readdir(cfg)).filter((name) => name.includes('.vanta-backup-'));
@@ -61,7 +62,7 @@ test('detects the installed hash and restores the original config on disable', a
   await fs.writeFile(target, original);
   const storage = new JsonStorage(root);
   await storage.init();
-  const service = new HeroGridService({ rootDir: root, storage, getGamePath: () => gamePath });
+  const service = new HeroGridService({ rootDir: root, storage, getGamePath: () => gamePath, processRunningCheck: async () => false });
 
   await service.apply({ patch: '7.41f', type: 'high-winrate', role: 'mid' });
   const installed = await service.list();
@@ -83,7 +84,7 @@ test('deleting a grid without an original config removes only the installed file
   await fs.mkdir(cfg, { recursive: true });
   const storage = new JsonStorage(root);
   await storage.init();
-  const service = new HeroGridService({ rootDir: root, storage, getGamePath: () => gamePath });
+  const service = new HeroGridService({ rootDir: root, storage, getGamePath: () => gamePath, processRunningCheck: async () => false });
 
   await service.apply({ patch: '7.41f', type: 'most-played', role: 'carry' });
   assert.equal((await fs.stat(target)).isFile(), true);
@@ -104,7 +105,7 @@ test('marks only the installed full-config mode and removes custom layouts', asy
   await fs.writeFile(target, `${JSON.stringify(source)}\n`);
   const storage = new JsonStorage(root);
   await storage.init();
-  const service = new HeroGridService({ rootDir: root, storage, getGamePath: () => gamePath });
+  const service = new HeroGridService({ rootDir: root, storage, getGamePath: () => gamePath, processRunningCheck: async () => false });
 
   await service.apply({ patch: '7.41f', type: 'high-winrate', role: 'mid' });
   const installed = await service.list();
@@ -133,7 +134,7 @@ test('deletes one user layout without deleting the installed D2PT layout', async
   await fs.mkdir(path.join(gamePath, 'dota'), { recursive: true });
   await fs.mkdir(cfg, { recursive: true });
   await storage.init();
-  const service = new HeroGridService({ rootDir: root, storage, getGamePath: () => gamePath });
+  const service = new HeroGridService({ rootDir: root, storage, getGamePath: () => gamePath, processRunningCheck: async () => false });
   const source = JSON.parse(await fs.readFile(path.join(__dirname, '..', 'src/data/hero-grids/7.41f/most-played.json'), 'utf8'));
   source.configs.push({ config_name: 'Keep Me', categories: [{ category_name: 'Custom', x_position: 0, y_position: 0, width: 100, height: 100, hero_ids: [1] }] });
   source.configs.push({ config_name: 'Delete Me', categories: [{ category_name: 'Custom', x_position: 0, y_position: 0, width: 100, height: 100, hero_ids: [2] }] });
@@ -146,4 +147,29 @@ test('deletes one user layout without deleting the installed D2PT layout', async
   assert.equal(result.configs.some((config) => config.config_name === 'Delete Me'), false);
   assert.equal(result.configs.some((config) => config.config_name === 'Keep Me'), true);
   assert.equal(result.configs[0].config_name, 'Dota2ProTracker 7.41f - Carry');
+});
+
+test('ambiguous Steam profiles require an explicit, validated account selection', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-grids-accounts-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const gamePath = path.join(root, 'steamapps', 'common', 'dota 2 beta', 'game');
+  const userdataRoot = path.join(root, 'userdata');
+  const steamIds = ['11111', '22222'];
+  for (const steamId of steamIds) {
+    const configPath = path.join(userdataRoot, steamId, '570', 'remote', 'cfg', 'hero_grid_config.json');
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, '{}');
+  }
+  const installer = new HeroGridInstaller({ rootDir: root, getGamePath: () => gamePath, platform: 'linux', home: root, env: {} });
+
+  await assert.rejects(installer.targetForInstall(), (error) => {
+    assert.equal(error.code, 'MULTIPLE_STEAM_ACCOUNTS');
+    assert.deepEqual(error.accounts.map((account) => account.steamId).sort(), steamIds);
+    return true;
+  });
+
+  const selected = await installer.targetForInstall({ steamId: steamIds[1], userdataRoot });
+  assert.equal(selected.steamId, steamIds[1]);
+  assert.equal(selected.userdataRoot, userdataRoot);
+  await assert.rejects(installer.targetForInstall({ steamId: '33333', userdataRoot }), /no longer available/i);
 });

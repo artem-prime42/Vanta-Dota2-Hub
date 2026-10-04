@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs/promises');
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, clipboard } = require('electron');
 const { Client } = require('discord-rpc');
 const { AppService } = require('./services/app-service');
 const { UpdateService } = require('./services/update-service');
@@ -46,7 +46,8 @@ let service;
 let updater;
 let diagnosticLogger;
 if (process.platform === 'linux') {
-  app.disableHardwareAcceleration();
+  // Keep Chromium compositing/video decode on the GPU unless a driver requires the software fallback.
+  if (process.env.VANTA_DISABLE_HARDWARE_ACCELERATION === '1') app.disableHardwareAcceleration();
   app.commandLine.appendSwitch('log-level', '3');
 }
 function register(channel, handler) { ipcMain.handle(channel, async (_event, payload) => { try { return { ok: true, data: await handler(payload) }; } catch (error) { console.error(`[${channel}]`, error); return { ok: false, error: error.message }; } }); }
@@ -119,10 +120,53 @@ async function createWindow() {
   register('hero-grids:list', () => service.getHeroGrids());
   register('hero-grids:diagnose', () => service.diagnoseHeroGrid());
   register('hero-grids:user-grids', () => service.getHeroGridUserGrids());
-  register('hero-grids:apply', (payload) => service.applyHeroGrid(payload));
+  register('hero-grids:apply', async (payload = {}) => {
+    try { return await service.applyHeroGrid(payload); }
+    catch (error) {
+      if (error.code !== 'MULTIPLE_STEAM_ACCOUNTS' || !Array.isArray(error.accounts) || !error.accounts.length) throw error;
+      const russian = service.storage.state.settings.appLanguage === 'ru';
+      const accounts = error.accounts;
+      const cancelLabel = russian ? 'Отмена' : 'Cancel';
+      const buttons = accounts.map((account) => `${account.steamId} — ${account.userdataRoot}`);
+      const cancelId = buttons.length;
+      const choice = await dialog.showMessageBox(window, {
+        type: 'question',
+        title: russian ? 'Выберите аккаунт Steam' : 'Choose a Steam account',
+        message: russian ? 'Найдено несколько аккаунтов. В какую конфигурацию установить сетку героев?' : 'Multiple Steam accounts were found. Which account should receive this Hero Grid?',
+        detail: russian ? 'Проверьте Steam ID и папку userdata. Сетка будет установлена только в выбранный профиль.' : 'Check the Steam ID and userdata folder. The Hero Grid will only be installed for the selected profile.',
+        buttons: [...buttons, cancelLabel],
+        cancelId,
+        defaultId: cancelId,
+        noLink: true,
+      });
+      if (choice.response === cancelId) return { cancelled: true };
+      const account = accounts[choice.response];
+      if (!account) throw error;
+      return service.applyHeroGrid({ ...payload, account: { steamId: account.steamId, userdataRoot: account.userdataRoot } });
+    }
+  });
   register('hero-grids:disable', () => service.disableHeroGrid());
   register('hero-grids:remove-user-grids', () => service.removeHeroGridUserGrids());
   register('hero-grids:remove-user-grid', ({ index }) => service.removeHeroGridUserGrid(index));
+  register('themes:list', () => service.getThemes());
+  register('themes:apply', ({ themeId }) => service.setTheme(themeId));
+  register('themes:import', async ({ filePath } = {}) => {
+    let selectedPath = filePath;
+    if (!selectedPath) {
+      const result = await dialog.showOpenDialog(window, { properties: ['openFile'], filters: [{ name: 'VANTA themes', extensions: ['json', 'vanta-theme', 'zip'] }] });
+      if (result.canceled || !result.filePaths[0]) return { cancelled: true };
+      [selectedPath] = result.filePaths;
+    }
+    return service.importTheme(selectedPath);
+  });
+  register('themes:search', ({ query = '', themes } = {}) => service.searchThemes(query, themes));
+  register('themes:copy-template', ({ text } = {}) => {
+    if (typeof text !== 'string' || text.length > 100_000) throw new Error('Theme template text is invalid.');
+    clipboard.writeText(text);
+    return { copied: true };
+  });
+  register('themes:remove', ({ themeId }) => service.removeTheme(themeId));
+  register('themes:open-folder', () => service.openThemesFolder());
   register('settings:set', async ({ key, value }) => { const result = await service.setSetting(key, value); await updateDiscordPresence(); return result; });
   register('update:check', ({ manual } = {}) => updater.check({ manual: manual !== false }));
   register('update:download', () => updater.download());

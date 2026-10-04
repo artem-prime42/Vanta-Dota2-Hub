@@ -12,6 +12,7 @@ const { detectDota, resolveDotaGamePath } = require('../../infrastructure/steam-
 const { searchMods } = require('../../core/models');
 const { detectExternalFiles } = require('../../infrastructure/external-files');
 const { HeroGridService } = require('../../infrastructure/hero-grid-service');
+const { ThemeManager, SEMANTIC_THEME_TOKENS } = require('../../infrastructure/theme-manager');
 const { migrateLegacyUserData } = require('../../infrastructure/user-data-migration');
 
 const DISCORD_APP_ID = '1551207182744166511';
@@ -55,9 +56,35 @@ function normalizeLanguageSuffix(value, fallback = 'russian') {
   return /^[a-z0-9_-]+$/i.test(normalized) ? normalized : fallback;
 }
 
+function pathIsWithin(root, candidate) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
+}
+
+async function resolveGameRelativePath(gamePath, relativePath) {
+  const normalized = String(relativePath || '').replace(/\\/g, '/');
+  if (!normalized || normalized.startsWith('/') || /^[a-z]:/i.test(normalized) || normalized.split('/').some((part) => !part || part === '.' || part === '..')) {
+    throw new Error('External file path is invalid');
+  }
+  const root = path.resolve(gamePath);
+  const candidate = path.resolve(root, ...normalized.split('/'));
+  if (!pathIsWithin(root, candidate)) throw new Error('External file path is outside the selected Dota folder');
+  const realRoot = await fs.realpath(root);
+  let existing = candidate;
+  while (!(await fs.lstat(existing).then(() => true, (error) => error.code === 'ENOENT' ? false : Promise.reject(error)))) {
+    const parent = path.dirname(existing);
+    if (parent === existing) throw new Error('External file path has no existing parent');
+    existing = parent;
+  }
+  const resolvedExisting = await fs.realpath(existing);
+  if (!pathIsWithin(realRoot, resolvedExisting)) throw new Error('External file path resolves outside the selected Dota folder');
+  return candidate;
+}
+
 class AppService {
   constructor({ rootDir, onProgress = () => {} }) {
     this.rootDir = rootDir;
+    this.onProgress = onProgress;
     this.userDataMigration = null;
     this.storage = new JsonStorage(rootDir);
     this.savedPacks = new SavedPackStore({ rootDir });
@@ -71,11 +98,13 @@ class AppService {
     this.mods = new ModManager({ rootDir, storage: this.storage, downloads: this.downloads, getGamePath: () => this.gamePath, getLanguageFolder: () => this.storage.state.settings.langSuffix || 'dota', onProgress });
     this.specialPatches = new SpecialPatchService({ rootDir, storage: this.storage, getGamePath: () => this.gamePath, getMods: () => this.catalog.mods, onProgress });
     this.heroGrids = new HeroGridService({ rootDir, storage: this.storage, getGamePath: () => this.gamePath, getLanguageFolder: () => this.storage.state.settings.langSuffix || 'russian' });
+    this.themeManager = new ThemeManager({ rootDir });
   }
 
   async init() {
     this.userDataMigration = await migrateLegacyUserData(this.rootDir);
     await this.storage.init();
+    await this.themeManager.init();
     const langSuffix = normalizeLanguageSuffix(this.storage.state.settings.langSuffix);
     if (langSuffix !== this.storage.state.settings.langSuffix) {
       await this.storage.patch({ settings: { ...this.storage.state.settings, langSuffix } });
@@ -94,6 +123,12 @@ class AppService {
     }
     if (this.gamePath) await this.mods.moveInstalledMods(langSuffix);
     const catalog = await this.catalog.load();
+    await this.themeManager.setCatalogThemes(catalog.themes);
+    const activeThemeId = this.storage.state.settings.activeThemeId || this.themeManager.getActiveThemeId();
+    await this.themeManager.setActiveTheme(activeThemeId, { persist: true });
+    if (this.storage.state.settings.activeThemeId !== this.themeManager.getActiveThemeId()) {
+      await this.storage.patch({ settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId() } });
+    }
     await this.specialPatches.refreshStates();
     return this.snapshot(catalog);
   }
@@ -101,7 +136,7 @@ class AppService {
   getPackMembership() {
     const membership = {};
     for (const pack of Object.values(this.storage.state.installedMods || {})) {
-      if (pack.type !== 'pack') continue;
+      if (!pack || typeof pack !== 'object' || pack.type !== 'pack') continue;
       const packName = pack.displayName || pack.name || pack.id;
       const sourceIds = pack.sourceModIds || pack.modIds || (pack.packMods || []).map((mod) => mod.id || mod.modId).filter(Boolean);
       sourceIds.forEach((modId) => { membership[modId] = packName; });
@@ -117,12 +152,13 @@ class AppService {
         if (runtime.status === 'updating') installed[id] = { ...record, specialPatchState: runtime.status, requiresPatchUpdate: true };
       }
     }
-    return { ...catalog, installed, packMembership: this.getPackMembership(), favorites: this.storage.state.favorites, settings: { ...this.storage.state.settings, discordAppId: DISCORD_APP_ID }, gamePath: this.gamePath, authors: this.getAuthors(), discordAppId: DISCORD_APP_ID, appVersion: this.appVersion || null };
+    return { ...catalog, installed, packMembership: this.getPackMembership(), favorites: this.storage.state.favorites, settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId(), discordAppId: DISCORD_APP_ID }, themes: this.themeManager.getThemes(), authorThemes: this.catalog.themes || [], themeTokens: [...SEMANTIC_THEME_TOKENS], themeTemplate: this.themeManager.getThemeTemplate(), gamePath: this.gamePath, authors: this.getAuthors(), discordAppId: DISCORD_APP_ID, appVersion: this.appVersion || null };
   }
 
   getAuthors() {
     const authors = new Map();
-    for (const mod of this.catalog.mods) {
+    const authorEntries = [...this.catalog.mods, ...(this.catalog.themes || []).map((theme) => ({ ...theme, id: theme.id }))];
+    for (const mod of authorEntries) {
       const rawName = mod.author || 'Unknown author';
       if (!rawName || /^anonymous$/i.test(rawName) || HIDDEN_AUTHORS.test(String(rawName).trim())) continue;
       const name = /^anonymous$/i.test(rawName) ? 'Community' : rawName;
@@ -157,13 +193,20 @@ class AppService {
     return { ...this.snapshot(), mods, categories, section, sections: SECTION_CATEGORIES };
   }
 
-  async refreshCatalog() { return this.snapshot(await this.catalog.load({ force: true })); }
+  async refreshCatalog() {
+    const catalog = await this.catalog.load({ force: true });
+    await this.themeManager.setCatalogThemes(catalog.themes);
+    const activeThemeId = this.storage.state.settings.activeThemeId || this.themeManager.getActiveThemeId();
+    await this.themeManager.setActiveTheme(activeThemeId, { persist: true });
+    if (this.storage.state.settings.activeThemeId !== this.themeManager.getActiveThemeId()) await this.storage.patch({ settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId() } });
+    return this.snapshot(catalog);
+  }
   async toggleFavorite(id) { const set = new Set(this.storage.state.favorites); set.has(id) ? set.delete(id) : set.add(id); await this.storage.patch({ favorites: [...set] }); return this.snapshot(); }
   async setGamePath(gamePath) { const resolvedGamePath = await resolveDotaGamePath(gamePath); if (!resolvedGamePath) throw new Error('Could not find dota/pak01_dir.vpk in the selected folder or its standard Steam Dota subfolders. Select Dota 2\game or use Auto detect.'); const previousPath = this.gamePath; this.gamePath = resolvedGamePath; try { await this.mods.moveInstalledMods(this.storage.state.settings.langSuffix || 'russian'); } catch (error) { this.gamePath = previousPath; throw error; } await this.storage.patch({ settings: { ...this.storage.state.settings, gamePath: resolvedGamePath } }); await this.specialPatches.refreshStates(); return this.snapshot(); }
   async detectGame() { const found = await detectDota(); if (found) await this.setGamePath(found.gamePath); return this.snapshot(); }
-  async install(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.install(mod); else await this.mods.install(mod); return this.snapshot(); }
-  async update(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.update(mod); else await this.mods.update(mod); return this.snapshot(); }
-  async uninstall(id) { if (this.storage.state.installedMods[id]?.modType === 'special_patch') await this.specialPatches.remove(id); else await this.mods.uninstall(id); return this.snapshot(); }
+  async install(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); if (mod.modType === 'theme') { const archive = await this.downloads.download(mod.id, mod.downloadUrl, { name: mod.name, operation: 'theme-install' }); this.onProgress({ id, name: mod.name, operation: 'theme-install', state: 'processing', phase: 'Importing theme', percent: null }); const imported = await this.themeManager.importTheme(archive); await this.setTheme(imported.id); await this.storage.patch({ installedMods: { ...this.storage.state.installedMods, [id]: { id, modId: id, modType: 'theme', type: 'theme', name: mod.name, displayName: mod.name, author: mod.author, version: mod.version, installedAt: new Date().toISOString() } } }); this.onProgress({ id, name: mod.name, operation: 'theme-install', state: 'completed', phase: 'Theme installed', percent: 100 }); } else if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.install(mod); else await this.mods.install(mod); return this.snapshot(); }
+  async update(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); if (mod.modType === 'theme') return this.install(id); if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.update(mod); else await this.mods.update(mod); return this.snapshot(); }
+  async uninstall(id) { const mod = this.catalog.getMod(id); if (mod?.modType === 'theme') await this.removeTheme(id); else if (this.storage.state.installedMods[id]?.modType === 'special_patch') await this.specialPatches.remove(id); else await this.mods.uninstall(id); return this.snapshot(); }
   async setModEnabled(id, enabled) { if (this.storage.state.installedMods[id]?.modType === 'special_patch') throw new Error('Special patches cannot be toggled like VPK mods. Remove the patch from the Library instead.'); await this.mods.setEnabled(id, enabled); return this.snapshot(); }
   async mergeMods(ids, name) { await this.mods.merge(ids, name); return this.getLibrary(); }
   async reorderLibrary(ids) { await this.mods.reorder(ids); return this.snapshot(); }
@@ -239,11 +282,13 @@ class AppService {
     let changed = false;
     const installedByFile = new Map();
     for (const [id, mod] of Object.entries(installedMods)) {
+      if (!mod || typeof mod !== 'object' || Array.isArray(mod)) continue;
       for (const name of [mod.deployedFileName, mod.gameFileName, mod.fileName]) {
         if (name) installedByFile.set(String(name).toLowerCase(), { ...mod, id });
       }
     }
     for (const [id, record] of Object.entries(installedMods)) {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) continue;
       if (record.source !== 'legacy' && record.source !== 'saved-pack' || !record.targetRoot) continue;
       const base = path.join(record.targetRoot, record.gameFileName || record.deployedFileName || record.installedFiles?.[0] || '');
       const candidates = [base, base.replace(/\.(?:off|moff)$/i, ''), `${base}.off`, `${base}.moff`];
@@ -284,7 +329,7 @@ class AppService {
     await this.importLegacyLibrary(languageFolder);
     await this.mods.syncInstalled();
     await this.specialPatches.refreshStates();
-    const allInstalled = Object.values(this.storage.state.installedMods);
+    const allInstalled = Object.values(this.storage.state.installedMods || {}).filter((record) => record && typeof record === 'object' && !Array.isArray(record));
     const installed = allInstalled.filter((mod) => languageFolderMatches(mod.languageFolder, languageFolder));
     const ownedFiles = installed.flatMap((mod) => {
       const recordedNames = [mod.deployedFileName, mod.gameFileName, ...(mod.installedFiles || [])].filter(Boolean).map((file) => path.basename(file));
@@ -296,8 +341,32 @@ class AppService {
   }
   async getLanguageFolders() { if (!this.gamePath) return []; const entries = await fs.readdir(this.gamePath, { withFileTypes: true }); const folders = entries.filter((entry) => entry.isDirectory() && /^dota_/i.test(entry.name)).map((entry) => normalizeLanguageSuffix(entry.name, '')).filter(Boolean); const selected = normalizeLanguageSuffix(this.storage.state.settings.langSuffix); return [...new Set([...folders, selected])].sort(); }
   async openModsFolder() { if (!this.gamePath) throw new Error('Dota 2 installation is not configured'); const folder = this.mods.getLanguageRoot(normalizeLanguageSuffix(this.storage.state.settings.langSuffix)); await fs.mkdir(folder, { recursive: true }); const { spawn } = require('child_process'); const command = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open'; const child = spawn(command, [folder], { detached: true, stdio: 'ignore' }); child.on('error', async () => { try { const { shell } = require('electron'); await shell.openPath(folder); } catch {} }); child.unref(); return folder; }
-  async setExternalEnabled(relativePath, enabled) { if (!this.gamePath || !relativePath || relativePath.includes('..')) throw new Error('External file path is invalid'); const root = path.resolve(this.gamePath); const active = path.resolve(root, relativePath); const disabled = `${active}.vanta-disabled`; if (!active.startsWith(`${root}${path.sep}`)) throw new Error('External file path is outside the selected Dota folder'); const source = enabled ? [disabled, `${active}.off`, `${active}.moff`] : [active]; const target = enabled ? active : disabled; const exists = async (file) => { try { await require('fs/promises').access(file); return true; } catch { return false; } }; let existing = ''; for (const candidate of source) if (await exists(candidate)) { existing = candidate; break; } if (existing && path.resolve(existing) !== path.resolve(target)) await require('fs/promises').rename(existing, target); return this.getLibrary(); }
-  async removeExternal(relativePath) { if (!this.gamePath || !relativePath || relativePath.includes('..')) throw new Error('External file path is invalid'); const root = path.resolve(this.gamePath); const active = path.resolve(root, relativePath); const disabled = `${active}.vanta-disabled`; if (!active.startsWith(`${root}${path.sep}`)) throw new Error('External file path is outside the selected Dota folder'); await require('fs/promises').rm(active, { force: true }); await require('fs/promises').rm(disabled, { force: true }); return this.getLibrary(); }
+  async setExternalEnabled(relativePath, enabled) {
+    if (!this.gamePath) throw new Error('Dota 2 installation is not configured');
+    const active = await resolveGameRelativePath(this.gamePath, relativePath);
+    const disabled = `${active}.vanta-disabled`;
+    const candidates = enabled ? [disabled, `${active}.off`, `${active}.moff`] : [active];
+    const target = enabled ? active : disabled;
+    let existing = '';
+    for (const candidate of candidates) {
+      const relative = path.relative(this.gamePath, candidate);
+      const safeCandidate = await resolveGameRelativePath(this.gamePath, relative);
+      if (await this.exists(safeCandidate)) { existing = safeCandidate; break; }
+    }
+    if (existing && path.resolve(existing) !== path.resolve(target)) await fs.rename(existing, target);
+    return this.getLibrary();
+  }
+
+  async removeExternal(relativePath) {
+    if (!this.gamePath) throw new Error('Dota 2 installation is not configured');
+    const active = await resolveGameRelativePath(this.gamePath, relativePath);
+    const disabled = `${active}.vanta-disabled`;
+    for (const candidate of [active, disabled]) {
+      const safeCandidate = await resolveGameRelativePath(this.gamePath, path.relative(this.gamePath, candidate));
+      await fs.rm(safeCandidate, { force: true });
+    }
+    return this.getLibrary();
+  }
   recordId(record) { return record?.id || record?.modId || null; }
   async savePack(name, modIds) {
     const ids = Array.isArray(modIds) ? [...new Set(modIds.filter(Boolean).filter((id) => this.storage.state.installedMods[id]))] : [];
@@ -526,10 +595,49 @@ class AppService {
     return { ...this.snapshot(), results };
   }
   getSettings() { return this.snapshot().settings; }
+  async getThemes() { return { ...this.snapshot(), themes: this.themeManager.getThemes(), activeThemeId: this.themeManager.getActiveThemeId() }; }
+  searchThemes(query, themes = this.themeManager.getThemes()) { return this.themeManager.searchThemes(query, themes); }
+  async setTheme(themeId) {
+    let theme = this.themeManager.getTheme(themeId);
+    if (theme.source === 'catalog' && theme.downloadUrl && !this.themeManager.themes.has(theme.id)) {
+      const archive = await this.downloads.download(theme.id, theme.downloadUrl);
+      theme = await this.themeManager.importTheme(archive);
+      await this.storage.patch({ installedMods: { ...this.storage.state.installedMods, [theme.id]: { id: theme.id, modId: theme.id, modType: 'theme', type: 'theme', name: theme.name, displayName: theme.name, author: theme.author, version: theme.version, installedAt: new Date().toISOString() } } });
+    }
+    await this.themeManager.setActiveTheme(theme.id, { persist: true });
+    await this.storage.patch({ settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId() } });
+    return { ...this.snapshot(), theme: theme || this.themeManager.getActiveTheme() };
+  }
+  async importTheme(filePath) {
+    await this.themeManager.importTheme(filePath);
+    return this.snapshot();
+  }
+  async removeTheme(themeId) {
+    const activeId = this.themeManager.getActiveThemeId();
+    const removedTheme = this.themeManager.getTheme(themeId);
+    await this.themeManager.removeTheme(themeId);
+    await this.themeManager.setCatalogThemes(this.catalog.themes || []);
+    const installedMods = { ...this.storage.state.installedMods };
+    delete installedMods[themeId];
+    await this.storage.patch({ settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId() }, installedMods });
+    return { ...this.snapshot(), removedThemeId: removedTheme?.id || themeId, activeThemeId: this.themeManager.getActiveThemeId(), resetToDefault: activeId === themeId };
+  }
+  async openThemesFolder() {
+    const electronApi = (() => { try { return require('electron'); } catch { return null; } })();
+    if (electronApi?.shell?.openPath) {
+      await electronApi.shell.openPath(this.themeManager.themesDir);
+    }
+    return { themesDir: this.themeManager.themesDir, themes: this.themeManager.getThemes() };
+  }
   async getDiagnostics(logger, app) { return require('../../infrastructure/diagnostics').collectDiagnostics({ service: this, app, logger }); }
   async setSetting(key, value) {
     if (key === 'langSuffix') value = normalizeLanguageSuffix(value);
     if (key === 'langSuffix' && value !== this.storage.state.settings.langSuffix) await this.mods.moveInstalledMods(value);
+    if (key === 'activeThemeId') {
+      await this.themeManager.setActiveTheme(value, { persist: true });
+      await this.storage.patch({ settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId() } });
+      return this.snapshot();
+    }
     await this.storage.patch({ settings: { ...this.storage.state.settings, [key]: value } });
     return this.snapshot();
   }

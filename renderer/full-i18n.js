@@ -20,6 +20,14 @@ Object.assign(FULL_TEXT.ru, {
 Object.assign(FULL_TEXT.en, {
   'Герои': 'Heroes', 'Предметы героев': 'Hero items', 'Эффекты героев': 'Hero effects', 'Звуки героев': 'Hero sounds', 'Ландшафты': 'Terrains', 'Деревья': 'Trees', 'Река': 'River', 'Крипы': 'Creeps', 'Башни': 'Towers', 'Рошан': 'Roshan', 'Древние': 'Ancients', 'Терминатор': 'Tormentor', 'Варды': 'Wards', 'Курьеры': 'Couriers', 'Пьедесталы': 'Pedestals', 'Денай крипов': 'Deny creeps', 'Фоны меню': 'Menu backgrounds', 'Эмблемы': 'Emblems', 'Иконки предметов': 'Item icons', 'Ранги': 'Ranks', 'Сигналы': 'Pings', 'Курсоры': 'Cursors', 'Шейдеры': 'Shaders', 'Паки эффектов': 'Effect packs', 'Эффекты предметов': 'Item effects', 'Дальние атаки': 'Ranged attacks', 'Дай пять': 'High five', 'Версус скин': 'Versus skin', 'Оптимизация': 'Optimization', 'Остальное': 'Other', 'Сайты': 'Sites', 'Пак': 'Pack'
 });
+function scheduleFullUiTranslate() {
+  if (scheduleFullUiTranslate.pending) return;
+  scheduleFullUiTranslate.pending = true;
+  requestAnimationFrame(() => {
+    scheduleFullUiTranslate.pending = false;
+    translateUi();
+  });
+}
 function translateUi() {
   if (typeof state === 'undefined') return;
   const language = state.data?.settings?.appLanguage === 'ru' ? 'ru' : 'en';
@@ -28,9 +36,13 @@ function translateUi() {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const nodes = [];
   while (walker.nextNode()) nodes.push(walker.currentNode);
-  nodes.forEach((node) => { const value = node.nodeValue.trim(); if (map[value]) node.nodeValue = node.nodeValue.replace(value, map[value]); });
+  nodes.forEach((node) => {
+    const value = node.nodeValue.trim();
+    const translated = map[value];
+    if (translated && translated !== value) node.nodeValue = node.nodeValue.replace(value, translated);
+  });
   document.querySelectorAll('input[placeholder]').forEach((input) => { if (language === 'ru' && input.placeholder === 'Search heroes') input.placeholder = 'Поиск героев'; if (language === 'en' && input.placeholder === 'Поиск героев') input.placeholder = 'Search heroes'; });
 }
-const fullI18nObserver = new MutationObserver(() => requestAnimationFrame(translateUi));
+const fullI18nObserver = new MutationObserver(() => scheduleFullUiTranslate());
 fullI18nObserver.observe(document.body, { childList: true, subtree: true });
-setTimeout(translateUi, 0);
+setTimeout(scheduleFullUiTranslate, 0);

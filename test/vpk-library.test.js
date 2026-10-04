@@ -73,6 +73,17 @@ test('legacy deployed pak filenames do not occupy library slots', async () => {
   assert.equal(await library.getNextAvailablePakFilename(), 'pak02_dir.vpk');
 });
 
+test('preferred Library slots cannot select reserved base-game VPK filenames', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-pak-reserved-'));
+  const storage = new JsonStorage(root); await storage.init();
+  const library = new VpkLibrary({ rootDir: root, storage }); await library.init();
+  await assert.rejects(() => library.reserveFileName('pak01_dir.vpk'), /Invalid VPK filename/);
+  await assert.rejects(() => library.reserveFileName('pak00_dir.vpk'), /Invalid VPK filename/);
+  const reservation = await library.reserveFileName('pak02_dir.vpk');
+  assert.equal(reservation.fileName, 'pak02_dir.vpk');
+  await reservation.release();
+});
+
 test('legacy record migration continues startup when all library slots are occupied', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-pak-legacy-full-'));
   const storage = new JsonStorage(root); await storage.init();

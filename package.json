@@ -2,7 +2,10 @@
   "name": "vanta-dota",
   "productName": "VANTA",
   "desktopName": "vanta",
-  "version": "2.0.11",
+  "version": "2.0.12",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "description": "Independent Dota 2 mod manager with a remote catalog.",
   "author": {
     "name": "VANTA",
@@ -35,8 +38,8 @@
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
-    "electron": "^33.4.11",
-    "electron-builder": "^26.15.3"
+    "electron": "41.10.7",
+    "electron-builder": "^26.5.0"
   },
   "build": {
     "appId": "com.vanta.dota",

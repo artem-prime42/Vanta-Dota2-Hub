@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-test('author cards resolve mod counts instead of displaying the {count} placeholder', () => {
+test('author and mod cards render counts and bind their catalog IDs', () => {
   const content = { innerHTML: '', classList: { toggle() {}, add() {}, remove() {} } };
   const document = {
     body: { classList: { toggle() {}, add() {}, remove() {} } },
@@ -64,8 +64,10 @@ test('author cards resolve mod counts instead of displaying the {count} placehol
     state.data.authors = [{ name: 'Alice', count: 3, avatarUrl: '' }];
     state.view = 'authors';
     renderAuthors();
+    window.testCardMarkup = card({ id: 'render-test-mod', name: 'Render Test Mod', author: 'Alice', categoryId: 'other', createdAt: '2026-10-04', downloads: 0 });
   `, context);
 
   assert.match(content.innerHTML, /3\s*мод/);
   assert.doesNotMatch(content.innerHTML, /\{count\}/);
+  assert.match(context.window.testCardMarkup, /data-id="render-test-mod"/);
 });

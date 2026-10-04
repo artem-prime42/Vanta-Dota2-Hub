@@ -79,6 +79,38 @@ function normalizeMod(raw, index = 0) {
   };
 }
 
+function validateSpecialPatch(mod) {
+  if (mod?.modType !== 'special_patch') return true;
+  const type = String(mod.specialType || '').toLowerCase();
+  if (!['weather', 'tower'].includes(type)) return false;
+  const revision = String(mod.currentVersion || mod.version || '');
+  if (!/^[a-f0-9]{40}$/i.test(revision)) return false;
+  const files = mod.requiredFiles;
+  const expectedIds = type === 'weather' ? ['555'] : ['677', '678'];
+  if (!Array.isArray(files) || files.length !== expectedIds.length) return false;
+  const seenIds = new Set();
+  const seenNames = new Set();
+  for (const file of files) {
+    const fileName = String(file?.fileName || '');
+    const itemId = String(file?.itemId || '');
+    const blobSha = String(file?.gitBlobSha || '');
+    let url;
+    try { url = new URL(String(file?.url || '')); } catch { return false; }
+    if (!fileName || fileName === '.' || fileName === '..' || /[\\/\0]/.test(fileName)) return false;
+    if (!/^[a-f0-9]{40}$/i.test(blobSha) || !expectedIds.includes(itemId) || seenIds.has(itemId)) return false;
+    if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'raw.githubusercontent.com') return false;
+    let pathname;
+    try { pathname = decodeURIComponent(url.pathname); } catch { return false; }
+    const folder = type === 'weather' ? 'Weather' : 'Towers';
+    if (pathname !== `/h6rd/Patcher/${revision}/assets/items/${folder}/${fileName}`) return false;
+    const foldedName = fileName.toLowerCase();
+    if (seenNames.has(foldedName)) return false;
+    seenIds.add(itemId);
+    seenNames.add(foldedName);
+  }
+  return expectedIds.every((id) => seenIds.has(id));
+}
+
 function normalizeAuthor(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const links = raw.links && typeof raw.links === 'object' ? raw.links : {};
@@ -96,12 +128,15 @@ function flattenCatalog(payload) {
         } else visit(item);
       });
     } else if (value && typeof value === 'object') {
-      Object.values(value).forEach(visit);
+      Object.entries(value).forEach(([key, nested]) => {
+        if (key.toLowerCase() !== 'themes' && key.toLowerCase() !== 'themeCatalog') visit(nested);
+      });
     }
   };
   visit(data);
   const seen = new Set();
   return result.map(normalizeMod).filter((mod) => {
+    if (mod.modType === 'special_patch' && !validateSpecialPatch(mod)) return false;
     if (seen.has(mod.id)) return false;
     seen.add(mod.id);
     return true;
@@ -120,4 +155,4 @@ function searchMods(mods, query, filters = {}) {
   });
 }
 
-module.exports = { CANONICAL_HERO_IDS, HERO_ID_TO_KEY, heroKeyFromId, heroDisplayName, flattenCatalog, normalizeAuthor, normalizeMod, searchMods, stableModId };
+module.exports = { CANONICAL_HERO_IDS, HERO_ID_TO_KEY, heroKeyFromId, heroDisplayName, flattenCatalog, normalizeAuthor, normalizeMod, searchMods, stableModId, validateSpecialPatch };

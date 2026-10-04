@@ -8,6 +8,7 @@ const I18N = {
     'nav.guides': 'Guides',
     'nav.heroGrids': 'Hero Grids',
     'nav.settings': 'Settings',
+    'nav.themes': 'Themes',
     'savedPacks.title': 'Saved packs',
     'savedPacks.subtitle': 'Reusable pack presets saved from the library.',
     'savedPacks.emptyTitle': 'No saved packs yet',
@@ -316,6 +317,7 @@ const I18N = {
     'nav.guides': 'Гайды',
     'nav.heroGrids': 'Сетки героев',
     'nav.settings': 'Настройки',
+    'nav.themes': 'Темы',
     'savedPacks.title': 'Сохранённые паки',
     'savedPacks.subtitle': 'Готовые пресеты паков, сохранённые из библиотеки.',
     'savedPacks.emptyTitle': 'Сохранённых паков пока нет',
@@ -638,6 +640,15 @@ function setLocalizedText(node, key, values) {
   node.textContent = value;
 }
 
+function scheduleDataI18n() {
+  if (scheduleDataI18n.pending) return;
+  scheduleDataI18n.pending = true;
+  requestAnimationFrame(() => {
+    scheduleDataI18n.pending = false;
+    applyDataI18n();
+  });
+}
+
 function applyDataI18n() {
   if (typeof document === 'undefined') return;
   document.querySelectorAll('[data-i18n]').forEach((node) => {
@@ -661,7 +672,7 @@ function applyDataI18n() {
 }
 
 if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.body) {
-  const i18nObserver = new MutationObserver(() => requestAnimationFrame(applyDataI18n));
+  const i18nObserver = new MutationObserver(() => scheduleDataI18n());
   i18nObserver.observe(document.body, { childList: true, subtree: true });
 }
 

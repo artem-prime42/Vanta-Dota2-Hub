@@ -1,3 +1,11 @@
+function scheduleCardPolish() {
+  if (scheduleCardPolish.pending) return;
+  scheduleCardPolish.pending = true;
+  requestAnimationFrame(() => {
+    scheduleCardPolish.pending = false;
+    polishModCards();
+  });
+}
 function polishModCards() {
   document.querySelectorAll('.mod-card').forEach((card) => {
     card.querySelectorAll('[data-card-category]').forEach((category) => category.remove());
@@ -11,6 +19,6 @@ function polishModCards() {
     if (/^unknown(?: author)?$/i.test(author.textContent.trim())) author.remove();
   });
 }
-const cardObserver = new MutationObserver(polishModCards);
+const cardObserver = new MutationObserver(() => scheduleCardPolish());
 cardObserver.observe(document.body, { childList: true, subtree: true });
-polishModCards();
+scheduleCardPolish();

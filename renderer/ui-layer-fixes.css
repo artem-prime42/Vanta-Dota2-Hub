@@ -2,3 +2,21 @@
 .library-bulk { bottom: 48px !important; z-index: 950 !important; }
 .library-mod-actions { flex: 0 0 auto; min-width: 185px; justify-content: flex-end; }
 .library-mod-actions .toggle-button, .external-file-controls .toggle-button { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 6px 12px; border-radius: 999px; font-weight: 600; line-height: 1; }
+
+.library-mod { min-width: 0; }
+.library-mod-info { flex: 1 1 180px; }
+.library-mod-info small { min-width: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 1100px) {
+	.main-content { width: auto; min-width: 0; flex: 1 1 auto; }
+	.topbar, .content { padding-right: 24px; padding-left: 24px; }
+	.library-mod { flex-wrap: wrap; }
+	.library-mod-info { flex: 1 1 220px; }
+	.library-mod-actions { flex: 1 1 100%; min-width: 0; margin-left: 0; flex-wrap: wrap; justify-content: flex-end; }
+}
+
+@media (max-width: 780px) {
+	.topbar, .content { padding-right: 16px; padding-left: 16px; }
+	.library-mod { column-gap: 8px; row-gap: 8px; }
+	.library-mod-actions { justify-content: flex-start; }
+}

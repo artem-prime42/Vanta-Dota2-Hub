@@ -32,8 +32,10 @@
     <link rel="stylesheet" href="guides.css" />
     <link rel="stylesheet" href="hero-grids.css" />
     <link rel="stylesheet" href="download-archives.css" />
+    <link rel="stylesheet" href="themes.css" />
   </head>
   <body>
+    <div id="theme-wallpaper" class="theme-wallpaper" aria-hidden="true"><div class="theme-wallpaper-image"></div><div class="theme-wallpaper-overlay"></div></div>
     <header class="titlebar">
       <div class="titlebar-brand"><strong>VANTA DOTA2 HUB</strong></div>
       <nav class="top-nav" aria-label="Catalog sections">
@@ -53,6 +55,7 @@
           <button class="nav-item" data-view="installed"><span>▦</span><span data-i18n="nav.library">Library</span></button>
           <button class="nav-item" data-view="saved-packs"><span>▣</span><span data-i18n="nav.savedPacks">Packs</span></button>
           <button class="nav-item" data-view="authors"><span>◉</span><span data-i18n="nav.authors">Authors</span></button>
+          <button class="nav-item" data-view="themes"><span>◌</span><span data-i18n="nav.themes">Themes</span></button>
           <button class="nav-item" data-view="guides"><span>▤</span><span data-i18n="nav.guides">Guides</span></button>
           <button class="nav-item" data-view="hero-grids"><span>▥</span><span data-i18n="nav.heroGrids">Hero Grids</span></button>
         </nav>
@@ -66,8 +69,10 @@
     </div>
     <footer class="statusbar"><span id="status-dot" class="status-dot"></span><span id="status-text" data-i18n="settings.gameMissingStatus">Dota 2 not found — set the path in settings</span><span class="status-source" data-i18n="status.catalogGithub">CATALOG · GITHUB</span></footer>
     <div id="toast" class="toast" role="status"></div>
+    <aside id="download-progress-panel" class="download-progress-panel" aria-live="polite" aria-atomic="false" hidden></aside>
     <aside id="update-panel" class="update-panel" aria-live="polite" hidden></aside>
     <dialog id="details" class="details-dialog"><button id="close-details" class="dialog-close" aria-label="Close">×</button><div id="details-content"></div></dialog>
+    <dialog id="patch-notes" class="patch-notes-dialog" aria-labelledby="patch-notes-title"><button id="close-patch-notes" class="dialog-close patch-notes-close" aria-label="Close">×</button><div id="patch-notes-content"></div></dialog>
     <dialog id="video-preview" class="video-preview-dialog"><button id="close-video-preview" class="dialog-close" aria-label="Close">×</button><div id="video-preview-content"></div></dialog>
     <script src="i18n.js"></script>
     <script src="app.js"></script>
@@ -79,6 +84,7 @@
     <script src="hero-grids.js"></script>
     <script src="guides-ui.js"></script>
     <script src="author-search.js"></script>
+    <script src="author-profile-ui.js"></script>
     <script src="settings-page.js"></script>
     <script src="card-links.js"></script>
     <script src="window-controls.js"></script>

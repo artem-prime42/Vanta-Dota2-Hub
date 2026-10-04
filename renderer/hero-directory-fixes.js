@@ -30,7 +30,33 @@ function heroDirectoryAttribute(id) { return Object.entries(HERO_ATTRIBUTE_MAP).
 function heroTags(mod) { if (Array.isArray(mod.tags)) return mod.tags.map((tag) => String(tag).trim().toLowerCase()); if (mod.tags && typeof mod.tags === 'object') return Object.entries(mod.tags).filter(([, value]) => value).map(([tag]) => tag.toLowerCase()); return []; }
 function heroHasTag(hero, tag) { return hero.mods.some((mod) => { const name = String(mod.name || '').toLowerCase(); return heroTags(mod).some((value) => value === tag || value.includes(tag)) || (tag === 'arcana' && name.includes('arcana')) || (tag === 'immortal' && name.includes('immortal')); }); }
 function heroCategoryButton(label, type, value, active = false) { return `<button class="hero-category-button${active ? ' active' : ''}" data-hero-category-type="${type}" data-hero-category-value="${value}">${label}</button>`; }
-function showHeroDirectoryStats(hero, allHeroes) { const dialog = document.createElement('dialog'); const rank = [...allHeroes].sort((left, right) => right.downloads - left.downloads || left.label.localeCompare(right.label)).findIndex((item) => item.id === hero.id) + 1; dialog.className = 'hero-stats-dialog'; dialog.innerHTML = `<button class="dialog-close" aria-label="Close">×</button><div class="hero-stats-body"><p class="eyebrow">HERO POPULARITY</p><h2>${heroDirectoryEscape(hero.label)}</h2><div class="hero-stat-grid"><strong>${hero.downloads.toLocaleString()}<small>Total downloads</small></strong><strong>#${rank || '-'}<small>Popularity rank</small></strong><strong>${hero.count}<small>Catalog mods</small></strong></div></div>`; document.body.appendChild(dialog); dialog.showModal(); dialog.querySelector('.dialog-close').onclick = () => dialog.close(); dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); }); dialog.addEventListener('close', () => dialog.remove()); }
+function closeHeroStatsDialog(dialog) {
+  if (!dialog.open || dialog.classList.contains('is-closing')) return;
+  dialog.classList.add('is-closing');
+  let timer;
+  const finish = () => {
+    if (!dialog.open) return;
+    clearTimeout(timer);
+    dialog.removeEventListener('animationend', onAnimationEnd);
+    dialog.close();
+  };
+  const onAnimationEnd = (event) => { if (event.target === dialog) finish(); };
+  dialog.addEventListener('animationend', onAnimationEnd);
+  timer = setTimeout(finish, 200);
+}
+
+function showHeroDirectoryStats(hero, allHeroes) {
+  const dialog = document.createElement('dialog');
+  const rank = [...allHeroes].sort((left, right) => right.downloads - left.downloads || left.label.localeCompare(right.label)).findIndex((item) => item.id === hero.id) + 1;
+  dialog.className = 'hero-stats-dialog';
+  dialog.innerHTML = `<button class="dialog-close" aria-label="Close">×</button><div class="hero-stats-body"><p class="eyebrow">HERO POPULARITY</p><h2>${heroDirectoryEscape(hero.label)}</h2><div class="hero-stat-grid"><strong>${hero.downloads.toLocaleString()}<small>Total downloads</small></strong><strong>#${rank || '-'}<small>Popularity rank</small></strong><strong>${hero.count}<small>Catalog mods</small></strong></div></div>`;
+  document.body.appendChild(dialog);
+  dialog.showModal();
+  dialog.querySelector('.dialog-close').onclick = () => closeHeroStatsDialog(dialog);
+  dialog.addEventListener('click', (event) => { if (event.target === dialog) closeHeroStatsDialog(dialog); });
+  dialog.addEventListener('cancel', (event) => { event.preventDefault(); closeHeroStatsDialog(dialog); });
+  dialog.addEventListener('close', () => dialog.remove());
+}
 
 function renderHeroCategoryGrid() {
   return `<label class="hero-directory-search">⌕<input id="hero-category-search" type="search" data-i18n-placeholder="search.heroCategory.placeholder" placeholder="${t('search.heroCategory.placeholder', 'Search heroes')}" value="${heroDirectoryEscape(state.heroDirectoryQuery || '')}"></label><div class="hero-category-grid"><section class="hero-category-column"><h3>Атрибуты</h3><div class="hero-category-options">${heroCategoryButton('Все', 'attribute', 'all', true)}${heroCategoryButton('Сила', 'attribute', 'strength')}${heroCategoryButton('Ловкость', 'attribute', 'agility')}${heroCategoryButton('Интеллект', 'attribute', 'intelligence')}${heroCategoryButton('Универсал', 'attribute', 'universal')}</div></section><section class="hero-category-column"><h3>Редкость</h3><div class="hero-category-options">${heroCategoryButton('Все', 'rarity', 'all', true)}${heroCategoryButton('Arcana', 'rarity', 'arcana')}${heroCategoryButton('Immortal', 'rarity', 'immortal')}</div></section><section class="hero-category-column"><h3>Теги</h3><div class="hero-category-options">${heroCategoryButton('Все', 'tag', 'all', true)}${heroCategoryButton('Аниме', 'tag', 'anime')}</div></section><section class="hero-category-column"><h3>Остальное</h3><div class="hero-category-options">${heroCategoryButton('Все', 'sort', 'all', true)}${heroCategoryButton('Недавно обновлённые', 'sort', 'recent')}${heroCategoryButton('С большим количеством модов', 'sort', 'mods')}${heroCategoryButton('Популярные', 'sort', 'popular')}</div></section></div>`;

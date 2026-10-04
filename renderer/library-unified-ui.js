@@ -24,7 +24,18 @@ function librarySlotLabel(slot) {
   return t(map[normalized] || map[raw.toLowerCase()] || normalized, normalized.replace(/\s+/g, ' '));
 }
 
-function libraryItemId(item) { return item.id || item.modId; }
+function libraryInstalledItems(installed = state.data?.installed) {
+  const entries = Array.isArray(installed)
+    ? installed.map((item, index) => [String(index), item])
+    : Object.entries(installed && typeof installed === 'object' ? installed : {});
+  return entries
+    .filter(([, item]) => item && typeof item === 'object' && !Array.isArray(item))
+    .map(([key, item]) => ({ ...item, id: item.id || item.modId || key, modId: item.modId || item.id || key }));
+}
+function libraryItemId(item) { return item?.id || item?.modId; }
+function isPinnedLibrarySpecialPatch(item) {
+  return item?.modType === 'special_patch' && ['tower', 'weather'].includes(item.specialType);
+}
 function libraryPriorityValue(item) {
   const deployedFileName = item?.gameFileName || item?.deployedFileName || item?.fileName;
   const fileMatch = String(deployedFileName || '').match(/pak(\d{2})_dir\.vpk/i);
@@ -37,11 +48,10 @@ function libraryPriorityLabel(item) {
   const value = libraryPriorityValue(item);
   return `Priority ${String(value).padStart(2, '0')}`;
 }
-function findLibraryItem(id) { const items = Array.isArray(state.data.installed) ? state.data.installed : Object.values(state.data.installed || {}); return items.find((item) => libraryItemId(item) === id); }
+function findLibraryItem(id) { return libraryInstalledItems().find((item) => String(libraryItemId(item)) === String(id)); }
 function hasInstalledLibraryId(id) {
   if (!id) return false;
-  const items = Array.isArray(state.data.installed) ? state.data.installed : Object.values(state.data.installed || {});
-  return items.some((item) => libraryItemId(item) === id);
+  return libraryInstalledItems().some((item) => String(libraryItemId(item)) === String(id));
 }
 function normalizeLibraryCategoryKey(value) {
   if (!value) return 'other';
@@ -68,7 +78,7 @@ function normalizeLibraryCategoryKey(value) {
   }[category] ?? (category in (CATEGORY_LABELS || {}) ? category : category.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''));
 }
 function libraryCategory(item) {
-  if (item.type === 'pack') return t('catalog.filterPacks', 'Packs');
+  if (item.type === 'pack' || item.categoryId === 'packs') return t('catalog.filterPacks', 'Packs');
   const raw = item.category || item.categoryId || 'other';
   const key = normalizeLibraryCategoryKey(raw);
   return CATEGORY_LABELS[key] || CATEGORY_LABELS[raw] || t('catalog.filterOther', 'Other');
@@ -77,7 +87,7 @@ function libraryCategoryOrder(category) {
   const key = normalizeLibraryCategoryKey(category);
   return { packs: 0, heroes: 1, 'hero-sounds': 2, other: 3, world: 4, interface: 5, effects: 6 }[key] ?? 99;
 }
-function libraryFilterForItem(item) { if (item.type === 'pack') return 'packs'; const category = item.categoryId || ''; if (['heroes', 'hero-items', 'herofx'].includes(category)) return 'heroes'; if (category === 'hero-sounds') return 'hero-sounds'; if (['terrains', 'trees', 'river', 'creeps', 'towers', 'weather', 'roshan', 'ancient', 'tormentor', 'wards', 'couriers', 'pedestal', 'creep-deny'].includes(category)) return 'world'; if (['backgrounds', 'huds', 'emblems', 'versus-screens', 'item-icons', 'ranks', 'pings', 'cursors'].includes(category)) return 'interface'; if (['shaders', 'ti-bp-effects', 'item-effects', 'ranged-attack', 'high-five'].includes(category)) return 'effects'; return 'other'; }
+function libraryFilterForItem(item) { if (item.type === 'pack' || item.categoryId === 'packs') return 'packs'; const category = item.categoryId || ''; if (['heroes', 'hero-items', 'herofx'].includes(category)) return 'heroes'; if (category === 'hero-sounds') return 'hero-sounds'; if (['terrains', 'trees', 'river', 'creeps', 'towers', 'weather', 'roshan', 'ancient', 'tormentor', 'wards', 'couriers', 'pedestal', 'creep-deny'].includes(category)) return 'world'; if (['backgrounds', 'huds', 'emblems', 'versus-screens', 'item-icons', 'ranks', 'pings', 'cursors'].includes(category)) return 'interface'; if (['shaders', 'ti-bp-effects', 'item-effects', 'ranged-attack', 'high-five'].includes(category)) return 'effects'; return 'other'; }
 function libraryFilterOptions() { const russian = state.data?.settings?.appLanguage === 'ru'; return [{ id: 'all', ru: 'Все', en: 'All' }, { id: 'heroes', ru: 'Герои', en: 'Heroes' }, { id: 'packs', ru: 'Паки', en: 'Packs' }, { id: 'world', ru: 'Мир', en: 'World' }, { id: 'interface', ru: 'Интерфейс', en: 'Interface' }, { id: 'effects', ru: 'Эффекты', en: 'Effects' }, { id: 'hero-sounds', ru: 'Звуки героев', en: 'Hero sounds' }, { id: 'other', ru: 'Остальное', en: 'Other' }].map((option) => ({ ...option, label: russian ? option.ru : option.en })); }
 
 function showUnifiedPackContents(pack) {
@@ -94,16 +104,21 @@ function showUnifiedPackContents(pack) {
 }
 
 function renderLibrary() {
-  const items = Object.values(state.data.installed || {});
+  const items = libraryInstalledItems();
   const filter = state.libraryFilter || 'all';
   const query = String(state.query || '').trim().toLowerCase();
   const visibleItems = items
     .slice()
-    .sort((left, right) => libraryPriorityValue(left) - libraryPriorityValue(right))
+    .sort((left, right) => {
+      const leftPinned = isPinnedLibrarySpecialPatch(left) ? 0 : 1;
+      const rightPinned = isPinnedLibrarySpecialPatch(right) ? 0 : 1;
+      if (leftPinned !== rightPinned) return leftPinned - rightPinned;
+      return libraryPriorityValue(left) - libraryPriorityValue(right);
+    })
     .filter((item) => {
     if (filter !== 'all' && libraryFilterForItem(item) !== filter) return false;
     if (!query) return true;
-    return [item.displayName, item.name, item.categoryId, item.category, item.hero, item.heroLabel, item.fileName, ...(item.installedFiles || [])].filter(Boolean).join(' ').toLowerCase().includes(query);
+    return [item.displayName, item.name, item.categoryId, item.category, item.hero, item.heroLabel, item.fileName, ...(Array.isArray(item.installedFiles) ? item.installedFiles : [])].filter(Boolean).join(' ').toLowerCase().includes(query);
   });
   const groups = new Map();
   visibleItems.forEach((item) => { const category = libraryCategory(item); if (!groups.has(category)) groups.set(category, []); groups.get(category).push(item); });
@@ -111,19 +126,33 @@ function renderLibrary() {
   const row = (item) => {
     const id = libraryItemId(item);
     const pack = item.type === 'pack';
+    const isPinnedPatch = isPinnedLibrarySpecialPatch(item);
     const name = item.displayName || item.name || id;
     const fileName = item.gameFileName || item.deployedFileName || item.fileName || item.installedFiles?.[0] || '';
-    const checkbox = `<label class="library-check"><input type="checkbox" data-library-select="${libraryEscape(id)}" ${selected.has(id) ? 'checked' : ''}><span></span></label>`;
+    const checkbox = isPinnedPatch ? '' : `<label class="library-check"><input type="checkbox" data-library-select="${libraryEscape(id)}" ${selected.has(id) ? 'checked' : ''}><span></span></label>`;
     const packButton = pack ? `<button class="action secondary library-pack-info" data-pack-content="${libraryEscape(id)}" title="${t('catalog.viewPackContents', 'View Pack contents')}" aria-label="${t('catalog.viewPackContents', 'View Pack contents')}">!</button>` : '';
     const savePackButton = pack ? `<button class="action secondary" data-save-pack="${libraryEscape(id)}">${t('savedPacks.savePack', 'Save pack')}</button>` : '';
-    const dragHandle = `<button type="button" class="library-drag-handle" draggable="true" aria-label="Reorder mod" data-library-drag-id="${libraryEscape(id)}"><span class="drag-dots"><i></i><i></i><i></i><i></i><i></i><i></i></span></button>`;
-    return `<article class="library-mod ${pack ? 'library-pack-item' : ''} ${selected.has(id) ? 'selected' : ''}" data-library-id="${libraryEscape(id)}">${dragHandle}${checkbox}${item.previewUrl ? `<img src="${libraryEscape(item.previewUrl)}" loading="lazy" alt="">` : '<div class="library-thumb-empty">◈</div>'}<div class="library-mod-info"><strong>${libraryEscape(name)}</strong><small>${libraryEscape(libraryCategory(item))}${item.heroLabel ? ` · ${libraryEscape(item.heroLabel)}` : ''}${item.slot ? ` · ${libraryEscape(librarySlotLabel(item.slot))}` : ''}</small><small>${libraryEscape(libraryPriorityLabel(item))} · ${libraryEscape(fileName)} · ${item.enabled === false ? t('catalog.actionDisabled', 'Disabled') : t('catalog.actionEnabled', 'Enabled')}</small></div><div class="library-mod-actions"><button class="toggle-button ${item.enabled !== false ? 'on' : ''}" data-library-toggle="${libraryEscape(id)}" data-library-enabled="${item.enabled !== false}">${item.enabled !== false ? t('catalog.actionEnabled', 'Enabled') : t('catalog.actionDisabled', 'Disabled')}</button>${packButton}${savePackButton}<button class="action secondary" data-library-remove="${libraryEscape(id)}">${t('catalog.uninstall', 'Remove')}</button></div></article>`;
+    const dragHandle = isPinnedPatch ? '' : `<button type="button" class="library-drag-handle" draggable="true" aria-label="Reorder mod" data-library-drag-id="${libraryEscape(id)}"><span class="drag-dots"><i></i><i></i><i></i><i></i><i></i><i></i></span></button>`;
+    const toggleButton = isPinnedPatch ? '' : `<button class="toggle-button ${item.enabled !== false ? 'on' : ''}" data-library-toggle="${libraryEscape(id)}" data-library-enabled="${item.enabled !== false}">${item.enabled !== false ? t('catalog.actionEnabled', 'Enabled') : t('catalog.actionDisabled', 'Disabled')}</button>`;
+    const patchInfo = isPinnedPatch ? (() => {
+      const record = findLibraryItem(id) || state.data?.installed?.[id] || null;
+      const rawVersion = String(record?.currentVersion ?? record?.version ?? '').trim();
+      const revision = rawVersion ? rawVersion.slice(0, 7) : '—';
+      const statusText = record?.specialPatchState === 'error'
+        ? specialPatchText('Ошибка патча', 'Patch error')
+        : (record?.requiresPatchUpdate || record?.specialPatchState === 'update_required')
+          ? specialPatchText('Требуется обновить патч', 'Requires patch update')
+          : specialPatchText('Патч актуален', 'Patch up to date');
+      return `<small>${specialPatchText('Версия патча', 'Patch revision')}: ${libraryEscape(revision)}</small><small><span class="special-patch-badge">PATCH</span> <span>${libraryEscape(statusText)}</span></small>`;
+    })() : `<small>${libraryEscape(libraryPriorityLabel(item))} · ${libraryEscape(fileName)} · ${item.enabled === false ? t('catalog.actionDisabled', 'Disabled') : t('catalog.actionEnabled', 'Enabled')}</small>`;
+    return `<article class="library-mod ${pack ? 'library-pack-item' : ''} ${selected.has(id) ? 'selected' : ''} ${isPinnedPatch ? 'library-special-patch-row' : ''}" data-library-id="${libraryEscape(id)}">${dragHandle}${checkbox}${item.previewUrl ? `<img src="${libraryEscape(item.previewUrl)}" loading="lazy" alt="">` : '<div class="library-thumb-empty">◈</div>'}<div class="library-mod-info"><strong>${libraryEscape(name)}</strong><small>${libraryEscape(libraryCategory(item))}${item.heroLabel ? ` · ${libraryEscape(item.heroLabel)}` : ''}${item.slot ? ` · ${libraryEscape(librarySlotLabel(item.slot))}` : ''}</small>${patchInfo}</div><div class="library-mod-actions">${toggleButton}${packButton}${savePackButton}<button class="action secondary" data-library-remove="${libraryEscape(id)}">${t('catalog.uninstall', 'Remove')}</button></div></article>`;
   };
   const sections = [...groups.entries()].sort(([left], [right]) => libraryCategoryOrder(left) - libraryCategoryOrder(right) || left.localeCompare(right)).map(([category, categoryItems]) => `<section class="library-section"><div class="library-section-heading"><h2>${libraryEscape(category)}</h2><span>${categoryItems.length}</span></div><div class="library-mod-list">${categoryItems.map(row).join('')}</div></section>`).join('');
   $('#content').innerHTML = `<div class="library-header"><div><p class="eyebrow">${t('catalog.libraryLocal', 'LOCAL LIBRARY')}</p><p>${t('catalog.libraryManage', 'Manage VPK files stored by VANTA.')}</p><div class="library-filters" role="tablist" aria-label="${t('catalog.libraryFilters', 'Library filters')}">${libraryFilterOptions().map((option) => `<button class="library-filter ${filter === option.id ? 'active' : ''}" data-library-filter="${option.id}">${option.label}</button>`).join('')}</div></div><div class="library-header-actions"><button class="action secondary" id="library-select-all">${t('catalog.selectAll', 'Select all')}</button></div></div><div class="library-bulk"><span>${selected.size} ${t('catalog.selectedShort', 'selected')}</span><button class="action secondary" id="library-enable-selected" ${selected.size ? '' : 'disabled'}>${t('catalog.enableSelected', 'Enable selected')}</button><button class="action secondary" id="library-disable-selected" ${selected.size ? '' : 'disabled'}>${t('catalog.disableSelected', 'Disable selected')}</button><button class="action secondary" id="library-remove-selected" ${selected.size ? '' : 'disabled'}>${t('catalog.removeSelected', 'Remove selected')}</button></div>${sections || `<div class="empty"><strong>${t('catalog.libraryEmptyTitle', 'Library is empty')}</strong>${t('catalog.libraryEmptyHint', 'Install or import a VPK to see it here.')}</div>`}`;
   bindUnifiedLibrary();
   renderExternalFiles();
   syncLibraryBulkUi();
+  if (typeof decorateSpecialLibrary === 'function') decorateSpecialLibrary();
 }
 
 function bindUnifiedLibrary() {
@@ -196,7 +225,7 @@ function bindUnifiedLibrary() {
       finally { state.libraryDraggingId = ''; document.querySelectorAll('.library-mod').forEach((item) => item.classList.remove('dragging', 'drop-target')); }
     });
   });
-  $('#library-select-all')?.addEventListener('click', () => { Object.values(state.data.installed || {}).forEach((item) => state.librarySelection.add(libraryItemId(item))); (state.data.external || []).forEach((file) => state.librarySelection.add(file.id)); renderLibrary(); });
+  $('#library-select-all')?.addEventListener('click', () => { libraryInstalledItems().forEach((item) => state.librarySelection.add(libraryItemId(item))); (state.data.external || []).forEach((file) => state.librarySelection.add(file.id)); renderLibrary(); });
   $('#library-pack')?.addEventListener('click', () => { const ids = [...state.librarySelection].filter((id) => !id.startsWith('external:')); if (ids.length < 2) return toast(t('catalog.selectAtLeastTwoMods', 'Select at least two mods to merge.')); openMergePackDialog(ids); });
   const selectedManaged = () => [...state.librarySelection].filter((id) => !id.startsWith('external:'));
   $('#library-enable-selected')?.addEventListener('click', async () => { const ids = selectedManaged(); if (!ids.length) return toast(t('catalog.selectInstalledMod', 'Select an installed mod.')); for (const id of ids) await call('mod:set-enabled', { id, enabled: true }); state.data = await call('library:get'); renderLibrary(); });

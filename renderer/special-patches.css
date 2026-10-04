@@ -13,34 +13,6 @@
   object-fit: contain;
 }
 
-.special-patch-warning {
-  display: grid;
-  gap: 4px;
-  margin: 12px 0 16px;
-  padding: 10px 12px;
-  border: 1px solid rgba(255, 190, 92, .3);
-  border-left: 3px solid #e2a64f;
-  border-radius: 8px;
-  background: rgba(226, 166, 79, .075);
-  color: #f0d6ac;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.special-patch-warning strong {
-  color: #ffe2ad;
-  font-size: 11px;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-.special-patch-warning.needs-update {
-  border-color: rgba(255, 119, 100, .38);
-  border-left-color: #ff7764;
-  background: rgba(255, 119, 100, .09);
-  color: #ffd2ca;
-}
-
 .special-patch-library-row {
   border-color: rgba(226, 166, 79, .17);
 }

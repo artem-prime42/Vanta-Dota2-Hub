@@ -33,14 +33,6 @@ function decorateSpecialDetails() {
     image.replaceWith(frame);
     frame.append(image);
   }
-  const record = specialInstalled(mod.id);
-  const body = content.querySelector('.details-body');
-  if (body && !body.querySelector('.special-patch-warning')) {
-    const notice = document.createElement('div');
-    notice.className = `special-patch-warning${specialNeedsUpdate(record) ? ' needs-update' : ''}`;
-    notice.innerHTML = `<strong>${specialPatchText('Специальный патч', 'Special patch')} · PATCH</strong><span>${specialNeedsUpdate(record) ? specialPatchText('Требуется обновить патч', 'Requires patch update') : specialPatchText('После обновления Dota может потребоваться повторный патч', 'May need repatching after Dota updates')}</span>`;
-    body.insertBefore(notice, body.querySelector('h2')?.nextSibling || body.firstChild);
-  }
 }
 
 async function updateSpecialPatch(id, button) {

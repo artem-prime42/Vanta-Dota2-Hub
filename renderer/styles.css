@@ -38,6 +38,20 @@
 .pack-progress-track { height: 7px; margin: 15px 0 7px; overflow: hidden; border-radius: 99px; background: #2b2b2b; }
 .pack-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
 .pack-progress-panel small { color: var(--muted); }
+.download-progress-panel { position: fixed; right: 25px; bottom: 92px; z-index: 1001; display: grid; gap: 9px; width: min(390px, calc(100vw - 40px)); max-height: min(45vh, 360px); overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: rgba(17, 19, 21, .97); box-shadow: 0 18px 48px #000b; backdrop-filter: blur(16px); }
+.download-progress-panel[hidden] { display: none; }
+.download-progress-item { min-width: 0; padding: 4px 3px; }
+.download-progress-item + .download-progress-item { padding-top: 11px; border-top: 1px solid var(--line); }
+.download-progress-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.download-progress-heading strong { overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.download-progress-status { flex: none; color: var(--accent); font-size: 12px; font-variant-numeric: tabular-nums; }
+.download-progress-phase { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.download-progress-track { height: 5px; margin-top: 8px; overflow: hidden; border-radius: 99px; background: var(--line); }
+.download-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .18s ease; }
+.download-progress-track.is-indeterminate span { width: 38% !important; animation: download-progress-indeterminate 1.2s ease-in-out infinite alternate; }
+.download-progress-details { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; }
+.download-progress-item.failed .download-progress-status, .download-progress-item.canceled .download-progress-status { color: var(--danger, #ef6a6a); }
+@keyframes download-progress-indeterminate { from { transform: translateX(0); } to { transform: translateX(165%); } }
 .toast { transform: translateY(90px) scale(.96); transition: transform .32s cubic-bezier(.22, 1, .36, 1), opacity .22s ease; }
 .toast.show { transform: translateY(0) scale(1); }
 .app-modal-dialog { animation: app-modal-enter .24s cubic-bezier(.22, 1, .36, 1) both; }
@@ -50,5 +64,8 @@
 @keyframes app-modal-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
 	.toast { transition: none; }
+	.download-progress-track span, .download-progress-track.is-indeterminate span { animation: none; transition: none; }
 	.app-modal-dialog, .app-modal-dialog::backdrop, .app-modal-dialog.is-closing, .app-modal-dialog.is-closing::backdrop { animation: none; }
 }
+.folder-nav-item { color: var(--muted); background: transparent; }
+.folder-nav-item:hover, .folder-nav-item:focus-visible { color: var(--text); background: var(--panel-2); }

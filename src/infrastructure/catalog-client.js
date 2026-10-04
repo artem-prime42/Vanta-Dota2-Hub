@@ -1,6 +1,6 @@
 const fs = require('fs/promises');
 const path = require('path');
-const { flattenCatalog, normalizeAuthor } = require('../core/models');
+const { flattenCatalog, normalizeAuthor, normalizeMod } = require('../core/models');
 
 const DEFAULT_URL = 'https://raw.githubusercontent.com/artem-prime42/dota2-mod-manager-catalog/main/catalog.json';
 
@@ -13,6 +13,7 @@ class CatalogClient {
     this.cacheFile = path.join(this.cacheDir, 'catalog.json');
     this.metaFile = path.join(this.cacheDir, 'catalog-meta.json');
     this.mods = [];
+    this.themes = [];
     this.authors = [];
     this.meta = { revision: null, updatedAt: null, offline: false };
     this.lastAttemptAt = null;
@@ -34,7 +35,7 @@ class CatalogClient {
     this.meta.offline = Boolean(networkError);
     await this.loadAuthors();
     if (networkError && !this.mods.length) throw networkError;
-    return { mods: this.mods, meta: this.meta };
+    return { mods: this.mods, themes: this.themes, meta: this.meta };
   }
 
   async fetchRemote() {
@@ -45,16 +46,19 @@ class CatalogClient {
     const payload = await response.json();
     const mods = flattenCatalog(payload);
     if (!mods.length) throw new Error('Catalog response contained no valid mods');
+    const themes = Array.isArray(payload?.themes) ? payload.themes.filter((theme) => theme && typeof theme === 'object' && !Array.isArray(theme)) : [];
     await fs.writeFile(this.cacheFile, JSON.stringify(payload));
     this.meta = { revision: response.headers.get('etag') || String(Date.now()), updatedAt: new Date().toISOString(), offline: false, source: 'remote' };
     await fs.writeFile(this.metaFile, JSON.stringify(this.meta));
     this.mods = mods;
+    this.themes = themes;
     return mods;
   }
 
   async loadCache() {
     const payload = JSON.parse(await fs.readFile(this.cacheFile, 'utf8'));
     this.mods = flattenCatalog(payload);
+    this.themes = Array.isArray(payload?.themes) ? payload.themes.filter((theme) => theme && typeof theme === 'object' && !Array.isArray(theme)) : [];
     try { this.meta = { ...this.meta, ...JSON.parse(await fs.readFile(this.metaFile, 'utf8')) }; } catch {}
     return this.mods;
   }
@@ -81,7 +85,12 @@ class CatalogClient {
   }
 
   async exists(file) { try { await fs.access(file); return true; } catch { return false; } }
-  getMod(id) { return this.mods.find((mod) => mod.id === id) || null; }
+  getMod(id) {
+    const mod = this.mods.find((item) => item.id === id);
+    if (mod) return mod;
+    const theme = this.themes.find((item) => item?.id === id);
+    return theme ? normalizeMod({ ...theme, file: theme.downloadUrl || theme.file, preview: theme.previewUrl || theme.preview, categoryId: 'themes', modType: 'theme' }) : null;
+  }
   getCategories() { return [...new Set(this.mods.map((mod) => mod.categoryId))].sort(); }
 }
 

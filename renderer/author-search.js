@@ -1,3 +1,12 @@
+function scheduleAuthorSearchSync() {
+  if (scheduleAuthorSearchSync.pending) return;
+  scheduleAuthorSearchSync.pending = true;
+  requestAnimationFrame(() => {
+    scheduleAuthorSearchSync.pending = false;
+    syncDirectoryViewClass();
+    addAuthorSearch();
+  });
+}
 function syncDirectoryViewClass() {
   document.body.classList.toggle('guides-view', state.view === 'guides');
   document.body.classList.toggle('authors-view', state.view === 'authors');
@@ -33,6 +42,6 @@ function addAuthorSearch() {
   filterAuthorCards();
 }
 
-const authorSearchObserver = new MutationObserver(() => { syncDirectoryViewClass(); addAuthorSearch(); });
+const authorSearchObserver = new MutationObserver(() => scheduleAuthorSearchSync());
 authorSearchObserver.observe(document.body, { childList: true, subtree: true });
-syncDirectoryViewClass();
+scheduleAuthorSearchSync();

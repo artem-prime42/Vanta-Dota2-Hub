@@ -8,6 +8,14 @@ test('flattens the external catalog and normalizes ids', () => {
   assert.equal(mods[0].downloadUrl, 'x.zip');
 });
 
+test('theme catalog entries are excluded from legacy mod flattening', () => {
+  const mods = flattenCatalog({
+    modsData: { heroes: [{ name: 'Normal Mod', file: 'normal.zip' }] },
+    themes: [{ id: 'community-theme', name: 'Community Theme', author: 'Maker', colors: {} }],
+  });
+  assert.deepEqual(mods.map((mod) => mod.name), ['Normal Mod']);
+});
+
 test('search filters by query and category without mutating input', () => {
   const mods = flattenCatalog({ mods: { modsData: { heroes: [{ name: 'Invoker Arcana', categoryId: 'heroes' }], terrain: [{ name: 'Autumn Terrain', categoryId: 'terrain' }] } } });
   assert.equal(searchMods(mods, 'invoker', { category: 'heroes' }).length, 1);
@@ -30,4 +38,30 @@ test('normalizes hero aliases with spaces and dashes to canonical ids', () => {
   assert.deepEqual(searchMods(mods, '', { hero: 'windranger' }).map((mod) => mod.name), ['Windrunner Set']);
   assert.deepEqual(searchMods(mods, '', { hero: 'underlord' }).map((mod) => mod.name), ['Abyssal Underlord Set']);
   assert.deepEqual(searchMods(mods, '', { hero: 'clockwerk' }).map((mod) => mod.name), ['Rattletrap Set']);
+});
+
+test('filters malformed special patches without dropping valid patches or ordinary catalog entries', () => {
+  const revision = 'bab71ddfaff0033e1cffef1134764ecb4e39f24e';
+  const patch = (overrides = {}) => ({
+    id: 'special-weather-rain',
+    name: 'Weather Rain',
+    modType: 'special_patch',
+    specialType: 'weather',
+    version: revision,
+    currentVersion: revision,
+    requiredFiles: [{
+      fileName: 'Rain.txt',
+      url: `https://raw.githubusercontent.com/h6rd/Patcher/${revision}/assets/items/Weather/Rain.txt`,
+      gitBlobSha: 'c76e26f4315e4266194feeadcf75464f01f7d3a7',
+      itemId: '555',
+    }],
+    ...overrides,
+  });
+  const mods = flattenCatalog({ mods: { modsData: { specialPatches: [
+    patch(),
+    patch({ id: 'bad-weather', requiredFiles: [{ fileName: '../Rain.txt', url: 'file:///etc/passwd', gitBlobSha: 'bad', itemId: '555' }] }),
+    { id: 'regular-mod', name: 'Regular mod', file: 'https://mods.invalid/mod.zip', categoryId: 'heroes' },
+  ] } } });
+
+  assert.deepEqual(mods.map((mod) => mod.name), ['Weather Rain', 'Regular mod']);
 });

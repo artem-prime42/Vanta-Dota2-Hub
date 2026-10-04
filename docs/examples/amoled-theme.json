@@ -1,0 +1,54 @@
+{
+  "id": "vanta-amoled",
+  "name": "AMOLED Minimal",
+  "author": "VANTA",
+  "version": "1.0.0",
+  "description": "Near-black surfaces, subtle outlines, compact corners, and a focused crimson accent.",
+  "background": {
+    "position": "center",
+    "size": "cover",
+    "repeat": "no-repeat",
+    "opacity": 0,
+    "overlay": "rgba(0, 0, 0, 0)"
+  },
+  "colors": {
+    "background": "#000000",
+    "surface": "#030303",
+    "surfaceElevated": "#080808",
+    "surfaceHover": "#101010",
+    "surfaceActive": "#171717",
+    "text": "#f7f7f7",
+    "textMuted": "#a0a0a0",
+    "textDisabled": "#5c5c5c",
+    "border": "rgba(255, 255, 255, 0.09)",
+    "accent": "#ff3b55",
+    "accentHover": "#ff6679",
+    "accentActive": "#d92d45",
+    "success": "#4ade80",
+    "warning": "#facc15",
+    "danger": "#ef4444",
+    "overlay": "rgba(0, 0, 0, 0.65)",
+    "shadow": "rgba(0, 0, 0, 0.55)",
+    "input": "#050505",
+    "button": "#ff3b55",
+    "card": "#050505",
+    "sidebar": "#010101",
+    "modal": "#060606",
+    "tooltip": "#111111",
+    "scrollbar": "#4b4b4b",
+    "focus": "#ff8191"
+  },
+  "effects": {
+    "blurSurface": 0,
+    "blurSidebar": 0,
+    "blurModal": 0,
+    "shadowSmall": "rgba(0, 0, 0, 0.25)",
+    "shadowMedium": "rgba(0, 0, 0, 0.42)",
+    "shadowLarge": "rgba(0, 0, 0, 0.68)"
+  },
+  "shape": {
+    "radiusSmall": 2,
+    "radiusMedium": 4,
+    "radiusLarge": 7
+  }
+}

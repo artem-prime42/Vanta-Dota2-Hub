@@ -63,6 +63,11 @@ function parseLibraryPaths(text) {
   return [...String(text || '').matchAll(/"path"\s+"([^"]+)"/g)].map((match) => match[1].replace(/\\\\/g, path.sep));
 }
 
+function parseWindowsSteamRegistryPath(output) {
+  const match = String(output || '').match(/^\s*(?:SteamPath|InstallPath)\s+REG_(?:SZ|EXPAND_SZ)\s+(.+?)\s*$/im);
+  return match?.[1]?.trim().replace(/^"|"$/g, '') || null;
+}
+
 async function activeSteamIds(userdataRoot) {
   const loginUsersPath = path.join(path.dirname(userdataRoot), 'config', 'loginusers.vdf');
   let text;
@@ -84,14 +89,21 @@ async function readDirectory(directory) {
 }
 
 async function processRunning(name, platform = process.platform) {
-  try {
-    if (platform === 'win32') {
-      const result = await execFileAsync('tasklist', ['/FI', `IMAGENAME eq ${name}.exe`, '/NH'], { windowsHide: true });
-      return new RegExp(`^${name}\.exe\\s`, 'im').test(String(result.stdout || ''));
+  if (platform === 'win32') {
+    try {
+      const result = await execFileAsync('tasklist', ['/FI', `IMAGENAME eq ${name}.exe`, '/NH', '/FO', 'CSV'], { windowsHide: true });
+      return new RegExp(`^"${name}\\.exe"[,\\s]`, 'im').test(String(result.stdout || ''));
+    } catch (error) {
+      throw new Error(`Could not safely check whether ${name} is running: ${error.message}`);
     }
+  }
+  try {
     const result = await execFileAsync('pgrep', ['-x', name]);
     return Boolean(String(result.stdout || '').trim());
-  } catch { return false; }
+  } catch (error) {
+    if (error.code === 1) return false;
+    throw new Error(`Could not safely check whether ${name} is running: ${error.message}`);
+  }
 }
 
 async function runningSteamRoots(platform = process.platform) {
@@ -137,11 +149,13 @@ async function steamRoots(platform = process.platform, home = os.homedir(), env 
     ];
     if (platform === 'win32') {
       for (const key of ['HKCU\\Software\\Valve\\Steam', 'HKLM\\Software\\Valve\\Steam', 'HKLM\\Software\\WOW6432Node\\Valve\\Steam']) {
-        try {
-          const result = await execFileAsync('reg', ['query', key, '/v', 'SteamPath'], { windowsHide: true });
-          const match = String(result.stdout || '').match(/SteamPath\s+REG_SZ\s+(.+)/i);
-          if (match) roots.push(match[1].trim());
-        } catch {}
+        for (const valueName of ['SteamPath', 'InstallPath']) {
+          try {
+            const result = await execFileAsync('reg', ['query', key, '/v', valueName], { windowsHide: true });
+            const registryPath = parseWindowsSteamRegistryPath(result.stdout);
+            if (registryPath) roots.push(registryPath);
+          } catch {}
+        }
       }
     }
     return unique(roots);
@@ -202,12 +216,13 @@ async function findConfigTargets(options = {}) {
 }
 
 class HeroGridInstaller {
-  constructor({ rootDir, getGamePath, platform = process.platform, home = os.homedir(), env = process.env }) {
+  constructor({ rootDir, getGamePath, platform = process.platform, home = os.homedir(), env = process.env, processRunningCheck = processRunning }) {
     this.rootDir = rootDir;
     this.getGamePath = getGamePath;
     this.platform = platform;
     this.home = home;
     this.env = env;
+    this.processRunningCheck = processRunningCheck;
     this.metadataPath = path.join(rootDir, 'database', 'hero-grid-install.json');
   }
 
@@ -236,10 +251,16 @@ class HeroGridInstaller {
     await this.writeMetadata(metadata);
   }
 
-  async targetForInstall() {
+  async targetForInstall(selection = null) {
     const gamePath = this.getGamePath?.();
     this.log('Detecting Steam...');
     const accounts = await findConfigTargets({ gamePath, platform: this.platform, home: this.home, env: this.env, runningSteamRoots: await runningSteamRoots(this.platform) });
+    if (selection?.steamId && selection?.userdataRoot) {
+      const selected = accounts.filter((account) => account.steamId === String(selection.steamId)
+        && path.resolve(account.userdataRoot) === path.resolve(String(selection.userdataRoot)));
+      if (selected.length === 1) return selected[0];
+      throw new Error('The selected Steam account is no longer available. Refresh and try again.');
+    }
     const metadata = await this.readMetadata();
     const preferredId = metadata?.steamId;
     const running = accounts.filter((account) => account.running);
@@ -258,7 +279,10 @@ class HeroGridInstaller {
     if (withConfig.length === 1) return withConfig[0];
     if (accounts.length === 1) return accounts[0];
     if (!accounts.length) throw new Error('Steam userdata was not found. Please configure Steam or Dota 2 first.');
-    throw new Error('Multiple Steam accounts were found. Open Steam with the desired account and try again.');
+    const error = new Error('Multiple Steam accounts were found. Choose the account that should receive the Hero Grid.');
+    error.code = 'MULTIPLE_STEAM_ACCOUNTS';
+    error.accounts = accounts.map(({ steamId, userdataRoot, active, running, local, hasConfig }) => ({ steamId, userdataRoot, active, running, local, hasConfig }));
+    throw error;
   }
 
   async detect() {
@@ -277,7 +301,7 @@ class HeroGridInstaller {
   }
 
   async removeUserConfigs({ isMetaConfig = (config) => /^Dota2ProTracker\b/i.test(String(config?.config_name || '')) } = {}) {
-    if (await processRunning('dota2', this.platform)) throw new Error('Close Dota 2 before removing Hero Grids.');
+    if (await this.processRunningCheck('dota2', this.platform)) throw new Error('Close Dota 2 before removing Hero Grids.');
     const current = await this.currentConfig();
     if (!current.target || !current.config) throw new Error('No valid Hero Grid configuration was found.');
     const userConfigs = current.config.configs.filter((config) => !isMetaConfig(config));
@@ -303,7 +327,7 @@ class HeroGridInstaller {
   }
 
   async removeUserConfig(index) {
-    if (await processRunning('dota2', this.platform)) throw new Error('Close Dota 2 before removing Hero Grids.');
+    if (await this.processRunningCheck('dota2', this.platform)) throw new Error('Close Dota 2 before removing Hero Grids.');
     const current = await this.currentConfig();
     const configIndex = Number(index);
     const entry = current.config?.configs?.[configIndex];
@@ -338,7 +362,7 @@ class HeroGridInstaller {
     const stat = file ? await fs.lstat(file).catch(() => null) : null;
     const content = file && stat ? await fs.readFile(file).catch(() => null) : null;
     const parsed = content ? (() => { try { return parseConfig(content.toString('utf8')); } catch { return null; } })() : null;
-    const running = { dota2: await processRunning('dota2', this.platform), steam: await processRunning('steam', this.platform) };
+    const running = { dota2: await this.processRunningCheck('dota2', this.platform), steam: await this.processRunningCheck('steam', this.platform) };
     return {
       os: this.platform,
       steamPath: target ? path.dirname(target.userdataRoot) : (runningRoots[0] || null),
@@ -365,11 +389,11 @@ class HeroGridInstaller {
     };
   }
 
-  async install({ config, patch, role, type }) {
+  async install({ config, patch, role, type, account = null }) {
     validateConfig(config);
-    if (await processRunning('dota2', this.platform)) throw new Error('Close Dota 2 before installing a Hero Grid.');
+    if (await this.processRunningCheck('dota2', this.platform)) throw new Error('Close Dota 2 before installing a Hero Grid.');
     this.log('Dota running: false');
-    const target = await this.targetForInstall();
+    const target = await this.targetForInstall(account);
     this.log('Config path:', target.configPath);
     await fs.mkdir(target.cfgDir, { recursive: true });
     const targetPath = target.configPath;
@@ -453,4 +477,4 @@ class HeroGridInstaller {
   }
 }
 
-module.exports = { HeroGridInstaller, discoverSteamRoots, findConfigTargets, runningSteamRoots, validateConfig, parseConfig };
+module.exports = { HeroGridInstaller, discoverSteamRoots, findConfigTargets, runningSteamRoots, validateConfig, parseConfig, parseLibraryPaths, parseWindowsSteamRegistryPath };

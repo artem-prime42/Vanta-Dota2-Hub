@@ -29,6 +29,126 @@ test('uninstall removes only files recorded in the VANTA manifest', async () => 
   assert.equal(await fs.readFile(path.join(gamePath, 'dota', 'original.txt'), 'utf8'), 'keep');
 });
 
+test('Item Effects uses the generic transactional VPK deployment and uninstall path', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-item-effects-generic-'));
+  const gamePath = path.join(root, 'game');
+  const targetRoot = path.join(gamePath, 'dota_russian');
+  await fs.mkdir(targetRoot, { recursive: true });
+  const sourceVpk = path.join(root, 'metaskins-runes.vpk');
+  const writer = new VpkWriter();
+  writer.addFile('particles/generic_gameplay/rune_illusion.vpcf_c', Buffer.from('rune illusion particle override'));
+  writer.addFile('materials/models/props_gameplay/illusion_color.vtex_c', Buffer.from('rune material override'));
+  writer.write(sourceVpk);
+  const storage = new JsonStorage(root);
+  await storage.init();
+  const manager = new ModManager({
+    rootDir: root,
+    storage,
+    getGamePath: () => gamePath,
+    getLanguageFolder: () => 'russian',
+    downloads: { download: async () => sourceVpk },
+  });
+  const mod = { id: 'metaskins-runes-test', name: 'MetaSkins Runes', author: 'Darkness', categoryId: 'item-effects', version: 'r1', downloadUrl: 'unused' };
+
+  const installed = await manager.install(mod);
+  const deployedPath = path.join(targetRoot, installed.gameFileName);
+  const deployedReader = VpkReader.open(deployedPath);
+  try {
+    assert.deepEqual(deployedReader.files().sort(), [
+      'materials/models/props_gameplay/illusion_color.vtex_c',
+      'particles/generic_gameplay/rune_illusion.vpcf_c',
+    ]);
+    assert.equal((await deployedReader.verify()).issues.length, 0);
+  } finally { deployedReader.close(); }
+  assert.equal(storage.state.installedMods[mod.id].categoryId, 'item-effects');
+  await manager.uninstall(mod.id);
+  await assert.rejects(fs.access(deployedPath), { code: 'ENOENT' });
+  assert.equal(storage.state.installedMods[mod.id], undefined);
+});
+
+test('uninstall rejects traversal in persisted game and Library paths without deleting external files', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-uninstall-traversal-'));
+  const gamePath = path.join(root, 'game');
+  const outside = path.join(root, 'keep.vpk');
+  await fs.mkdir(gamePath, { recursive: true });
+  await fs.writeFile(outside, 'keep');
+  const storage = new JsonStorage(root); await storage.init();
+  await storage.patch({ installedMods: {
+    malicious: { id: 'malicious', type: 'mod', fileName: '../keep.vpk', gameFileName: '../keep.vpk', targetRoot: gamePath },
+  } });
+  const manager = new ModManager({ rootDir: root, storage, getGamePath: () => gamePath, downloads: {} });
+
+  await assert.rejects(manager.uninstall('malicious'), /unsafe VPK filename/);
+  assert.equal(await fs.readFile(outside, 'utf8'), 'keep');
+  assert.ok(storage.state.installedMods.malicious);
+});
+
+test('uninstall leaves a deployed VPK alone if its bytes diverged from the Library copy', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-uninstall-modified-'));
+  const gamePath = path.join(root, 'game');
+  const targetRoot = path.join(gamePath, 'dota_russian');
+  const libraryDir = path.join(root, 'database', 'library');
+  await fs.mkdir(targetRoot, { recursive: true });
+  await fs.mkdir(libraryDir, { recursive: true });
+  await fs.writeFile(path.join(libraryDir, 'pak02_dir.vpk'), 'library bytes');
+  await fs.writeFile(path.join(targetRoot, 'pak02_dir.vpk'), 'changed game bytes');
+  const storage = new JsonStorage(root); await storage.init();
+  await storage.patch({ installedMods: { mod: { id: 'mod', type: 'mod', fileName: 'pak02_dir.vpk', gameFileName: 'pak02_dir.vpk', targetRoot, languageFolder: 'russian' } } });
+  const manager = new ModManager({ rootDir: root, storage, getGamePath: () => gamePath, downloads: {} });
+
+  await assert.rejects(manager.uninstall('mod'), /no longer matches/);
+  assert.equal(await fs.readFile(path.join(targetRoot, 'pak02_dir.vpk'), 'utf8'), 'changed game bytes');
+  assert.equal(await fs.readFile(path.join(libraryDir, 'pak02_dir.vpk'), 'utf8'), 'library bytes');
+  assert.ok(storage.state.installedMods.mod);
+});
+
+test('updating a disabled mod leaves it disabled in the game folder', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-update-disabled-'));
+  const gamePath = path.join(root, 'game');
+  const targetRoot = path.join(gamePath, 'dota_russian');
+  await fs.mkdir(targetRoot, { recursive: true });
+  const archivePathV1 = path.join(root, 'mod-v1.vpk');
+  const writerV1 = new VpkWriter(); writerV1.addFile('scripts/value.txt', Buffer.from('v1')); writerV1.write(archivePathV1);
+  const archivePathV2 = path.join(root, 'mod-v2.vpk');
+  const writerV2 = new VpkWriter(); writerV2.addFile('scripts/value.txt', Buffer.from('v2')); writerV2.write(archivePathV2);
+  let selectedArchive = archivePathV1;
+  const storage = new JsonStorage(root); await storage.init();
+  const manager = new ModManager({ rootDir: root, storage, getGamePath: () => gamePath, getLanguageFolder: () => 'russian', downloads: { download: async () => selectedArchive } });
+  await manager.library.init();
+  const first = await manager.install({ id: 'mod', name: 'Mod', version: '1', downloadUrl: 'unused' });
+  await manager.setEnabled('mod', false);
+  selectedArchive = archivePathV2;
+  await manager.update({ id: 'mod', name: 'Mod', version: '2', downloadUrl: 'unused' });
+
+  assert.equal(storage.state.installedMods.mod.enabled, false);
+  await assert.rejects(fs.access(path.join(targetRoot, first.fileName)));
+  const reader = VpkReader.open(path.join(targetRoot, `${first.fileName}.vanta-disabled`));
+  try { assert.equal(reader.readFile('scripts/value.txt').toString(), 'v2'); } finally { reader.close(); }
+});
+
+test('cross-device mod moves copy, verify, and remove the source only after destination is complete', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-exdev-move-'));
+  const source = path.join(root, 'source.vpk');
+  const target = path.join(root, 'target', 'pak02_dir.vpk');
+  await fs.writeFile(source, Buffer.alloc(2 * 1024 * 1024, 0x5a));
+  const manager = new ModManager({ rootDir: root, storage: new JsonStorage(root), downloads: {}, getGamePath: () => root });
+  let simulatedExdev = true;
+  const renameImpl = async (from, to) => {
+    if (simulatedExdev && from === source) {
+      simulatedExdev = false;
+      const error = new Error('cross-device rename');
+      error.code = 'EXDEV';
+      throw error;
+    }
+    return fs.rename(from, to);
+  };
+
+  await manager.moveFile(source, target, { renameImpl });
+
+  await assert.rejects(fs.access(source), { code: 'ENOENT' });
+  assert.equal(await fs.readFile(target).then((data) => data.length), 2 * 1024 * 1024);
+});
+
 test('library keeps mods from the shared dota folder visible for every language', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-library-language-'));
   const service = new AppService({ rootDir: root });
@@ -71,6 +191,39 @@ test('legacy installed records without targetRoot are excluded from external fil
 
   assert.equal(library.installed.length, 1);
   assert.deepEqual(library.external.map((file) => file.fileName), ['manual_pudge.vpk']);
+});
+
+test('legacy state with a malformed null record does not prevent the remaining Library mods from loading', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-library-null-record-'));
+  const service = new AppService({ rootDir: root });
+  await service.storage.init();
+  service.gamePath = path.join(root, 'game');
+  service.importLegacyLibrary = async () => {};
+  service.mods.syncInstalled = async () => {};
+  await service.storage.patch({ installedMods: {
+    brokenLegacyEntry: null,
+    valid: { id: 'valid', modId: 'valid', type: 'mod', name: 'Valid mod', displayName: 'Valid mod', categoryId: 'heroes' },
+  } });
+
+  const library = await service.getLibrary();
+
+  assert.deepEqual(library.installed.map((mod) => mod.id), ['valid']);
+});
+
+test('mod migration drops malformed null records without discarding valid installed entries', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-library-null-migration-'));
+  const storage = new JsonStorage(root);
+  await storage.init();
+  await storage.patch({ installedMods: {
+    brokenLegacyEntry: null,
+    valid: { id: 'valid', modId: 'valid', type: 'mod', fileName: 'pak02_dir.vpk', installedFiles: ['pak02_dir.vpk'] },
+  } });
+  const manager = new ModManager({ rootDir: root, storage, downloads: {}, getGamePath: () => null });
+
+  await manager.init();
+
+  assert.equal(storage.state.installedMods.brokenLegacyEntry, undefined);
+  assert.equal(storage.state.installedMods.valid.id, 'valid');
 });
 
 test('changing language moves installed mods to the selected language folder', async () => {

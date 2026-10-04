@@ -1,0 +1,64 @@
+{
+  "id": "my-theme",
+  "name": "My Theme",
+  "author": "Your Name",
+  "version": "1.0.0",
+  "description": "My custom VANTA theme",
+  "translations": {
+    "ru": {
+      "name": "Моя тема",
+      "description": "Моё оформление VANTA."
+    },
+    "en": {
+      "name": "My Theme",
+      "description": "My custom VANTA theme."
+    }
+  },
+  "background": {
+    "position": "center",
+    "size": "cover",
+    "repeat": "no-repeat",
+    "opacity": 0,
+    "overlay": "rgba(0, 0, 0, 0)"
+  },
+  "colors": {
+    "background": "#070707",
+    "surface": "#111111",
+    "surfaceElevated": "#1a1a1a",
+    "surfaceHover": "#202020",
+    "surfaceActive": "#2a2a2a",
+    "text": "#f2f2f2",
+    "textMuted": "#9a9a9a",
+    "textDisabled": "#6a6a6a",
+    "border": "#2d2d2d",
+    "accent": "#f2f2f2",
+    "accentHover": "#ffffff",
+    "accentActive": "#d0d0d0",
+    "success": "#4ade80",
+    "warning": "#facc15",
+    "danger": "#ef4444",
+    "overlay": "rgba(0, 0, 0, 0.65)",
+    "shadow": "rgba(0, 0, 0, 0.55)",
+    "input": "#101010",
+    "button": "#f2f2f2",
+    "card": "#171717",
+    "sidebar": "#0d0d0d",
+    "modal": "#171717",
+    "tooltip": "#1f1f1f",
+    "scrollbar": "#5a5a5a",
+    "focus": "#d8d8d8"
+  },
+  "effects": {
+    "blurSurface": 0,
+    "blurSidebar": 0,
+    "blurModal": 0,
+    "shadowSmall": "rgba(0, 0, 0, 0.25)",
+    "shadowMedium": "rgba(0, 0, 0, 0.4)",
+    "shadowLarge": "rgba(0, 0, 0, 0.55)"
+  },
+  "shape": {
+    "radiusSmall": 4,
+    "radiusMedium": 8,
+    "radiusLarge": 14
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "id": "vanta-glass",
+  "name": "Glass",
+  "author": "VANTA",
+  "version": "1.0.0",
+  "description": "A layered glass interface with a local abstract wallpaper, soft blur, and translucent surfaces.",
+  "background": {
+    "image": "background.jpg",
+    "position": "center",
+    "size": "cover",
+    "repeat": "no-repeat",
+    "opacity": 0.78,
+    "overlay": "rgba(5, 8, 18, 0.4)",
+    "gradient": {
+      "type": "linear",
+      "angle": 135,
+      "colors": ["rgba(7, 10, 22, 0.25)", "rgba(34, 18, 48, 0.3)"]
+    }
+  },
+  "colors": {
+    "background": "#090d18",
+    "surface": "rgba(14, 20, 34, 0.72)",
+    "surfaceElevated": "rgba(30, 37, 58, 0.78)",
+    "surfaceHover": "rgba(46, 56, 82, 0.82)",
+    "surfaceActive": "rgba(59, 70, 99, 0.86)",
+    "text": "#f3f5ff",
+    "textMuted": "#b1bad1",
+    "textDisabled": "#77819b",
+    "border": "rgba(226, 232, 255, 0.16)",
+    "accent": "#9a8cff",
+    "accentHover": "#b8adff",
+    "accentActive": "#7969df",
+    "success": "#70e4b3",
+    "warning": "#f5d37a",
+    "danger": "#ff8295",
+    "overlay": "rgba(0, 0, 0, 0.65)",
+    "shadow": "rgba(0, 0, 0, 0.55)",
+    "input": "rgba(8, 13, 26, 0.72)",
+    "button": "#9a8cff",
+    "card": "rgba(18, 25, 43, 0.68)",
+    "sidebar": "rgba(9, 14, 27, 0.78)",
+    "modal": "rgba(15, 20, 34, 0.9)",
+    "tooltip": "rgba(32, 39, 59, 0.94)",
+    "scrollbar": "#7168a8",
+    "focus": "#c5bcff"
+  },
+  "effects": {
+    "blurSurface": 8,
+    "blurSidebar": 10,
+    "blurModal": 6,
+    "shadowSmall": "rgba(0, 0, 0, 0.2)",
+    "shadowMedium": "rgba(0, 0, 0, 0.38)",
+    "shadowLarge": "rgba(0, 0, 0, 0.58)"
+  },
+  "shape": {
+    "radiusSmall": 8,
+    "radiusMedium": 14,
+    "radiusLarge": 22
+  }
+}

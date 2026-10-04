@@ -5,6 +5,37 @@ const os = require('os');
 const path = require('path');
 const { DownloadManager } = require('../src/infrastructure/download-manager');
 
+test('download manager emits named percentage progress and an explicit downloaded state', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-download-progress-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const progress = [];
+  const manager = new DownloadManager(root, (event) => progress.push(event), [], async () => new Response('12345678', {
+    headers: { 'content-length': '8' },
+  }));
+
+  await manager.download('test-mod', 'https://example.test/test-mod.zip', { name: 'Test Mod', operation: 'mod-install' });
+
+  const downloadEvents = progress.filter((event) => event.state === 'downloading');
+  assert.ok(downloadEvents.length > 0);
+  assert.ok(downloadEvents.every((event) => event.id === 'test-mod' && event.name === 'Test Mod' && event.operation === 'mod-install'));
+  assert.equal(downloadEvents.at(-1).percent, 100);
+  assert.equal(downloadEvents.at(-1).loaded, 8);
+  assert.equal(progress.at(-1).state, 'downloaded', 'download completion must not imply installation completion');
+  assert.equal(progress.at(-1).percent, 100);
+});
+
+test('download manager reports unknown content length without inventing a percentage', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-download-unknown-size-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const progress = [];
+  const manager = new DownloadManager(root, (event) => progress.push(event), [], async () => new Response('data'));
+
+  await manager.download('unknown-size', 'https://example.test/unknown.zip', { name: 'Unknown Size Mod', operation: 'mod-install' });
+
+  assert.equal(progress.find((event) => event.state === 'downloading')?.percent, null);
+  assert.equal(progress.at(-1).state, 'downloaded');
+});
+
 test('download manager reuses and clears saved archives', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-downloads-'));
   const manager = new DownloadManager(root);

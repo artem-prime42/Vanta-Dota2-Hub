@@ -3,7 +3,7 @@ const path = require('path');
 
 const FIRST_PAK_NUMBER = 2;
 const LAST_PAK_NUMBER = 99;
-const PAK_PATTERN = /^pak(\d{2})_dir\.vpk$/i;
+const PAK_PATTERN = /^pak(?:0[2-9]|[1-9]\d)_dir\.vpk$/i;
 
 function isPakFilename(value) {
   return PAK_PATTERN.test(String(value || ''));
@@ -33,6 +33,7 @@ class VpkLibrary {
   async occupiedFilenames() {
     const occupied = new Set();
     for (const record of Object.values(this.storage.state.installedMods || {})) {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) continue;
       const fileName = record.fileName || (!record.gameFileName && !record.deployedFileName && !record.targetRoot ? (record.installedFiles || []).find(isPakFilename) : null);
       if (isPakFilename(fileName)) occupied.add(fileName.toLowerCase());
     }

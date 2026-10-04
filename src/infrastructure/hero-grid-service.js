@@ -89,11 +89,11 @@ function previewCategories(grid, role) {
 }
 
 class HeroGridService {
-  constructor({ storage, rootDir = storage.rootDir, getGamePath, getLanguageFolder = () => 'russian' }) {
+  constructor({ storage, rootDir = storage.rootDir, getGamePath, getLanguageFolder = () => 'russian', processRunningCheck }) {
     this.storage = storage;
     this.getGamePath = getGamePath;
     this.getLanguageFolder = getLanguageFolder;
-    this.installer = new HeroGridInstaller({ rootDir, getGamePath });
+    this.installer = new HeroGridInstaller({ rootDir, getGamePath, processRunningCheck });
   }
 
   async list() {
@@ -153,7 +153,7 @@ class HeroGridService {
     return grid;
   }
 
-  async apply({ patch, mode, type, role = 'all-roles' }) {
+  async apply({ patch, mode, type, role = 'all-roles', account = null }) {
     const normalizedType = normalizeType(type || mode || 'most-played');
     const normalizedRole = normalizeRoleId(role || 'all-roles');
     const grid = await this.resolveConfig(patch, normalizedType);
@@ -161,7 +161,7 @@ class HeroGridService {
     const selectedConfig = grid.configs[roleData.sourceConfigIndex] || grid.configs[0];
     const installConfig = { version: grid.version, configs: [selectedConfig] };
     validateConfig(installConfig);
-    const installation = await this.installer.install({ config: installConfig, patch, role: normalizedRole, type: normalizedType });
+    const installation = await this.installer.install({ config: installConfig, patch, role: normalizedRole, type: normalizedType, account });
     const selection = { patch, role: normalizedRole, type: normalizedType };
     await this.storage.patch({ settings: { ...this.storage.state.settings, heroGridSelection: selection } });
     return { selection, target: installation.metadata.targetPath, installation };

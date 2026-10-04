@@ -1,3 +1,11 @@
+function scheduleLibraryBulkSync() {
+  if (scheduleLibraryBulkSync.pending) return;
+  scheduleLibraryBulkSync.pending = true;
+  requestAnimationFrame(() => {
+    scheduleLibraryBulkSync.pending = false;
+    syncLibraryBulkUi();
+  });
+}
 function syncLibraryBulkUi() {
   const panel = document.querySelector('.library-bulk');
   if (!panel) return;
@@ -65,9 +73,9 @@ function showPackProgress(event) {
   if (event.state === 'completed' || event.state === 'failed') setTimeout(() => panel.remove(), 3500);
 }
 
-const libraryBulkObserver = new MutationObserver(syncLibraryBulkUi);
+const libraryBulkObserver = new MutationObserver(() => scheduleLibraryBulkSync());
 libraryBulkObserver.observe(document.body, { childList: true, subtree: true });
-syncLibraryBulkUi();
+scheduleLibraryBulkSync();
 window.vanta.onDownloadProgress((event) => {
   if (event.operation !== 'pack') return;
   if (event.state === 'processing' || event.state === 'completed' || event.state === 'failed') showPackProgress(event);

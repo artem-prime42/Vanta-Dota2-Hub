@@ -192,11 +192,16 @@ function renderHeroGrids() {
       button.disabled = true;
       button.textContent = heroGridText('Installing...', 'Установка...');
       try {
-        await call('hero-grids:apply', {
+        const result = await call('hero-grids:apply', {
           patch: patchName,
           type: button.dataset.heroGridModeValue,
           role: button.dataset.heroGridApply,
         });
+        if (result?.cancelled) {
+          button.disabled = false;
+          button.textContent = heroGridText('Use', 'Использовать');
+          return;
+        }
         state.heroGrids = await call('hero-grids:list');
         toast(heroGridText('Hero grid installed. Restart Dota 2 to apply it.', 'Сетка героев установлена. Перезапустите Dota 2, чтобы применить изменения.'));
         renderHeroGrids();
