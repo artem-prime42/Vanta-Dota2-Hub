@@ -535,7 +535,7 @@ test('definition indentation matches Patcher space-to-tab normalization', () => 
 });
 
 test('stale patch backups are rebuilt from the current clean Dota files instead of aborting install', async (t) => {
-  const fixture = await createFixture(t);
+  const fixture = await createFixture(t, { platform: 'linux' });
   const { service, storage, gameinfo, signatures, gamePath } = fixture;
   const cleanGameinfo = await fs.readFile(gameinfo);
   const cleanSignatureDatabase = Buffer.from(appendSignature('original signature data\n', cleanGameinfo));
@@ -827,7 +827,7 @@ test('uninstall removes exact VANTA edits when original backups are corrupted', 
 });
 
 test('a signatures write failure rolls back the earlier VPK and gameinfo writes', async (t) => {
-  const fixture = await createFixture(t);
+  const fixture = await createFixture(t, { platform: 'linux' });
   const { service, storage, gameinfo, signatures, gamePath } = fixture;
   const originalGameinfo = await fs.readFile(gameinfo);
   const originalSignatures = await fs.readFile(signatures);

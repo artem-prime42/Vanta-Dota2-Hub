@@ -8,7 +8,7 @@ test('Windows Steam discovery accepts Patcher InstallPath registry values and pa
   assert.equal(parseWindowsSteamRegistryPath('    InstallPath    REG_SZ    D:\\Games\\Steam\r\n'), 'D:\\Games\\Steam');
   assert.equal(parseWindowsSteamRegistryPath('    SteamPath    REG_EXPAND_SZ    %ProgramFiles(x86)%\\Steam\r\n'), '%ProgramFiles(x86)%\\Steam');
   assert.equal(parseWindowsSteamRegistryPath('ERROR: The system was unable to find the specified registry key or value.'), null);
-  assert.deepEqual(parseLibraryPaths('"libraryfolders" { "1" { "path" "D:\\\\SteamLibrary" } }'), ['D:/SteamLibrary']);
+  assert.deepEqual(parseLibraryPaths('"libraryfolders" { "1" { "path" "D:\\\\SteamLibrary" } }'), [path.normalize('D:/SteamLibrary')]);
 });
 
 test('Windows Dota folder selection normalizes game, Dota, app, and Steam library roots', async () => {
