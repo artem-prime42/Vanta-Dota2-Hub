@@ -33,8 +33,8 @@ async function resolveDotaGamePath(selectedPath, { platform = process.platform, 
   return null;
 }
 
-async function detectDotaInstallation() {
-  const libraries = await discoverSteamRoots({ platform: process.platform, home: os.homedir(), env: process.env });
+async function detectDotaInstallation({ libraries: librariesOverride = null, platform = process.platform, home = os.homedir(), env = process.env, existsImpl = exists } = {}) {
+  const libraries = librariesOverride || await discoverSteamRoots({ platform, home, env });
   const seen = new Set();
   for (const library of libraries) {
     const game = path.join(library, 'steamapps/common/dota 2 beta/game');
@@ -45,7 +45,7 @@ async function detectDotaInstallation() {
       seen.add(normalized);
       const dotaPath = path.join(candidate, 'dota');
       const pak01Path = path.join(dotaPath, 'pak01_dir.vpk');
-      if (await exists(pak01Path)) {
+      if (await existsImpl(pak01Path)) {
         const vpkFiles = [];
         try {
           const entries = await fs.readdir(dotaPath);
@@ -55,7 +55,7 @@ async function detectDotaInstallation() {
         } catch {}
         return { detected: true, gamePath: candidate, dotaPath, pak01Path, vpkFiles };
       }
-      if (await exists(dotaPath) && candidate === direct) {
+      if (await existsImpl(dotaPath) && candidate === direct) {
         return { detected: true, gamePath: candidate, dotaPath, pak01Path: path.join(dotaPath, 'pak01_dir.vpk'), vpkFiles: [] };
       }
     }

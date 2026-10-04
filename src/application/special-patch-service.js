@@ -1159,6 +1159,7 @@ module.exports = {
   buildPlatformSearchPaths,
   ensurePatchSearchPath,
   extractItemBlock,
+  findKeyBlock,
   findMatchingBrace,
   gitBlobHash,
   hasPatchSearchPath,

@@ -331,6 +331,67 @@ test('Linux runtime compatibility writes the pak01.vpk alias alongside the upstr
   } finally { reader.close(); }
 });
 
+test('Linux install and repeat install preserve pre-DIGEST Valve signatures and uninstall restores both baselines', async (t) => {
+  const fixture = await createFixture(t, { platform: 'linux', gameinfoText: WINDOWS_GAMEINFO_BASELINE });
+  const { service, gamePath, gameinfo, signatures } = fixture;
+  await fs.writeFile(signatures, WINDOWS_SIGNATURES_BASELINE);
+  const baselineGameinfo = await fs.readFile(gameinfo);
+  const baselineSignatures = await fs.readFile(signatures);
+
+  await service.install(mods[0]);
+  const primary = path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk');
+  const alias = path.join(gamePath, 'DotaModdingCommunityMods', 'pak01.vpk');
+  const firstPrimary = await fs.readFile(primary);
+  const firstAlias = await fs.readFile(alias);
+  const firstSignatures = await fs.readFile(signatures);
+  const lines = firstSignatures.toString('utf8').split('\r\n');
+  const digestIndex = lines.findIndex((line) => line.startsWith('DIGEST:'));
+  assert.deepEqual(lines.slice(0, digestIndex + 1), baselineSignatures.toString('utf8').split('\r\n').slice(0, digestIndex + 1));
+  assert.equal(lines.slice(digestIndex + 1).filter((line) => line.startsWith('...\\..\\..\\dota\\gameinfo_branchspecific.gi~')).length, 1);
+  assert.deepEqual(firstAlias, firstPrimary);
+
+  const backupDirectory = await service.getBackupDirectory(gamePath);
+  assert.deepEqual(await fs.readFile(path.join(backupDirectory, 'gameinfo_branchspecific.gi')), baselineGameinfo);
+  assert.deepEqual(await fs.readFile(await service.findSignatureBackup(backupDirectory, signatures)), baselineSignatures);
+
+  await service.install(mods[0]);
+  assert.deepEqual(await fs.readFile(primary), firstPrimary);
+  assert.deepEqual(await fs.readFile(alias), firstAlias);
+  assert.deepEqual(await fs.readFile(signatures), firstSignatures);
+
+  await service.remove(mods[0].id);
+  assert.deepEqual(await fs.readFile(gameinfo), baselineGameinfo);
+  assert.deepEqual(await fs.readFile(signatures), baselineSignatures);
+  assert.equal(await service.exists(primary), false);
+  assert.equal(await service.exists(alias), false);
+});
+
+test('Linux uninstall with corrupted backups strips only VANTA edits and preserves Valve signature records', async (t) => {
+  const fixture = await createFixture(t, { platform: 'linux', gameinfoText: WINDOWS_GAMEINFO_BASELINE });
+  const { service, gamePath, gameinfo, signatures } = fixture;
+  await fs.writeFile(signatures, WINDOWS_SIGNATURES_BASELINE);
+  const baselineSignatures = await fs.readFile(signatures, 'utf8');
+  await service.install(mods[0]);
+  const backupDirectory = await service.getBackupDirectory(gamePath);
+  const backupSignatures = await service.findSignatureBackup(backupDirectory, signatures);
+  await fs.writeFile(path.join(backupDirectory, 'gameinfo_branchspecific.gi'), 'corrupted gameinfo backup');
+  await fs.writeFile(backupSignatures, 'corrupted signatures backup');
+
+  await service.remove(mods[0].id);
+
+  const restoredGameinfo = await fs.readFile(gameinfo, 'utf8');
+  const restoredSignatures = await fs.readFile(signatures, 'utf8');
+  assert.doesNotMatch(restoredGameinfo, /DotaModdingCommunityMods|Patched by DotaModdingCommunity Patcher/);
+  const expectedPrefix = baselineSignatures.split('\r\n');
+  const actualLines = restoredSignatures.split(/\r?\n/);
+  const expectedDigestIndex = expectedPrefix.findIndex((line) => line.startsWith('DIGEST:'));
+  const actualDigestIndex = actualLines.findIndex((line) => line.startsWith('DIGEST:'));
+  assert.deepEqual(actualLines.slice(0, actualDigestIndex + 1), expectedPrefix.slice(0, expectedDigestIndex + 1));
+  assert.equal(actualLines.slice(actualDigestIndex + 1).filter((line) => line.startsWith('...\\..\\..\\dota\\gameinfo_branchspecific.gi~')).length, 0);
+  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01.vpk')), false);
+  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), false);
+});
+
 test('Windows refuses to fall back to a Linux-only signatures database', async (t) => {
   const fixture = await createFixture(t, { platform: 'win32', gameinfoText: WINDOWS_GAMEINFO_BASELINE });
   const { service, gameinfo, signatures, windowsSignatures, gamePath } = fixture;

@@ -6,6 +6,7 @@ const { AppService } = require('./services/app-service');
 const { UpdateService } = require('./services/update-service');
 const AdmZip = require('adm-zip');
 const { DiagnosticLogger, buildDiagnosticArchiveFiles } = require('../infrastructure/diagnostics');
+const { collectLinuxDiagnostic } = require('../infrastructure/linux-diagnostics');
 
 const DISCORD_APP_ID = '1551207182744166511';
 
@@ -114,6 +115,18 @@ async function createWindow() {
     const archive = new AdmZip();
     for (const [name, content] of Object.entries(files)) archive.addFile(name, Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8'));
     await fs.writeFile(result.filePath, archive.toBuffer());
+    return { canceled: false, filePath: result.filePath };
+  });
+  register('diagnostics:linux-export', async () => {
+    if (process.platform !== 'linux') throw new Error('The Linux Dota diagnostic report is available only on Linux.');
+    const result = await dialog.showSaveDialog(window, {
+      title: 'Export VANTA Linux diagnostic report',
+      defaultPath: path.join(app.getPath('downloads'), 'vanta-linux-diagnostic.json'),
+      filters: [{ name: 'JSON report', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    const report = await collectLinuxDiagnostic({ service, appVersion: app.getVersion() });
+    await fs.writeFile(result.filePath, `${JSON.stringify(report, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
     return { canceled: false, filePath: result.filePath };
   });
   register('diagnostics:renderer-log', ({ level = 'error', message = '', stack = '' } = {}) => diagnosticLogger.write(level, `[renderer] ${message}${stack ? `\n${stack}` : ''}`));
