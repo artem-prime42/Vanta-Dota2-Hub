@@ -219,11 +219,12 @@ test('Windows and Linux use upstream Source 2 relative mounts without cross-plat
 test('Windows Weather install builds valid gameinfo, VPK, and matching win64 signatures', async (t) => {
   const fixture = await createFixture(t, { platform: 'win32', gameinfoText: WINDOWS_GAMEINFO_BASELINE });
   const { service, gameinfo, signatures, windowsSignatures, gamePath } = fixture;
-  // The service canonicalizes its root; Windows realpath can normalize drive/path casing.
+  // Resolve paths through the service's canonical root to avoid Windows 8.3 temp-path aliases.
   const paths = service.getDotaPaths();
+  const resolvedWindowsSignatures = await service.findSignaturesPath(paths);
   assert.equal(normalizedPathForComparison(path.relative(paths.root, paths.gameinfo), service.platform), 'dota/gameinfo_branchspecific.gi');
   assert.equal(normalizedPathForComparison(path.relative(paths.root, paths.modVpk), service.platform), 'dotamoddingcommunitymods/pak01_dir.vpk');
-  assert.equal(normalizedPathForComparison(path.relative(paths.root, windowsSignatures), service.platform), 'bin/win64/dota.signatures');
+  assert.equal(normalizedPathForComparison(path.relative(paths.root, resolvedWindowsSignatures), service.platform), 'bin/win64/dota.signatures');
   const originalWindowsSignatures = await fs.readFile(windowsSignatures);
   const originalLinuxSignatures = await fs.readFile(signatures);
 
