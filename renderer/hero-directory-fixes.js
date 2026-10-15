@@ -1,4 +1,4 @@
-const CANONICAL_HEROES = 'abaddon alchemist ancient_apparition anti_mage arc_warden axe bane batrider beastmaster bloodseeker bounty_hunter brewmaster bristleback centaur chaos_knight chen clinkz clockwerk crystal_maiden dark_seer dark_willow dawnbreaker dazzle death_prophet disruptor doom dragon_knight drow_ranger earth_spirit earthshaker elder_titan ember_spirit enchantress enigma faceless_void grimstroke gyrocopter hoodwink huskar invoker io jakiro juggernaut keeper_of_the_light kez kunkka largo legion_commander leshrac lich lifestealer lina lion lone_druid luna lycan magnus marci mars medusa meepo mirana monkey_king morphling muerta naga_siren nature_prophet necrophos night_stalker nyx_assassin ogre_magi omniknight oracle outworld_devourer pangolier phantom_assassin phantom_lancer phoenix primal_beast puck pudge pugna queen_of_pain razor riki ringmaster rubick sand_king shadow_demon shadow_fiend shadow_shaman silencer skywrath_mage slardar slark snapfire sniper spectre spirit_breaker storm_spirit sven techies templar_assassin terrorblade tidehunter timbersaw tinker tiny treant_protector troll_warlord tusk underlord undying ursa vengeful_spirit venomancer viper visage void_spirit warlock weaver windranger winter_wyvern witch_doctor wraith_king zeus'.split(' ');
+const CANONICAL_HEROES = 'abaddon alchemist ancient_apparition anti_mage arc_warden axe bane batrider beastmaster bloodseeker bounty_hunter brewmaster bristleback broodmother centaur chaos_knight chen clinkz clockwerk crystal_maiden dark_seer dark_willow dawnbreaker dazzle death_prophet disruptor doom dragon_knight drow_ranger earth_spirit earthshaker elder_titan ember_spirit enchantress enigma faceless_void grimstroke gyrocopter hoodwink huskar invoker io jakiro juggernaut keeper_of_the_light kez kunkka largo legion_commander leshrac lich lifestealer lina lion lone_druid luna lycan magnus marci mars medusa meepo mirana monkey_king morphling muerta naga_siren nature_prophet necrophos night_stalker nyx_assassin ogre_magi omniknight oracle outworld_devourer pangolier phantom_assassin phantom_lancer phoenix primal_beast puck pudge pugna queen_of_pain razor riki ringmaster rubick sand_king shadow_demon shadow_fiend shadow_shaman silencer skywrath_mage slardar slark snapfire sniper spectre spirit_breaker storm_spirit sven techies templar_assassin terrorblade tidehunter timbersaw tinker tiny treant_protector troll_warlord tusk underlord undying ursa vengeful_spirit venomancer viper visage void_spirit warlock weaver windranger winter_wyvern witch_doctor wraith_king zeus'.split(' ');
 const HERO_PORTRAITS = { anti_mage: 'antimage', clockwerk: 'rattletrap', doom: 'doom_bringer', io: 'wisp', lifestealer: 'life_stealer', magnus: 'magnataur', nature_prophet: 'furion', necrophos: 'necrolyte', outworld_devourer: 'obsidian_destroyer', queen_of_pain: 'queenofpain', shadow_fiend: 'nevermore', timbersaw: 'shredder', treant_protector: 'treant', underlord: 'abyssal_underlord', vengeful_spirit: 'vengefulspirit', wraith_king: 'skeleton_king', windranger: 'windrunner', zeus: 'zuus' };
 const HERO_ATTRIBUTE_MAP = {
   strength: new Set('alchemist axe bristleback centaur chaos_knight clockwerk dawnbreaker doom dragon_knight earth_spirit earthshaker elder_titan huskar kunkka largo legion_commander lifestealer lycan mars night_stalker ogre_magi omniknight phoenix primal_beast pudge slardar spirit_breaker sven tidehunter timbersaw tiny treant_protector tusk underlord undying wraith_king'.split(' ')),
@@ -67,6 +67,13 @@ function renderHeroDirectory() {
       entries.set(id, entry);
     }
   }
+  for (const cosmeticHero of state.data.cosmetics?.heroes || []) {
+    const id = normalizeHeroId(cosmeticHero?.key);
+    if (!id) continue;
+    const entry = entries.get(id) || { id, label: cosmeticHero.name || heroDirectoryLabel(id), count: 0, downloads: 0, updatedAt: 0, mods: [] };
+    entry.label = cosmeticHero.name || entry.label;
+    entries.set(id, entry);
+  }
   const heroes = [...entries.values()];
   const cosmeticHeroes = new Map((state.data.cosmetics?.heroes || []).map((hero) => [normalizeHeroId(hero.key), hero]));
   const skinCount = (hero) => (cosmeticHeroes.get(hero.id)?.slots || []).reduce((count, slot) => count + (slot.options || []).length, 0);
@@ -118,6 +125,7 @@ function renderHeroDirectory() {
   });
   document.querySelectorAll('[data-hero]').forEach((node) => { node.onclick = () => { state.hero = node.dataset.hero; state.heroSlot = 'all'; state.heroQuery = ''; loadCatalog(); }; node.onkeydown = (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); node.click(); } }; });
   apply();
+  window.restoreHeroDirectoryScroll?.();
   if (shouldLoadCosmetics) {
     call('cosmetics:list').then((data) => { state.data.cosmetics = data; }).catch((error) => { state.data.cosmetics = { heroes: [], error: error.message }; }).finally(() => {
       state.heroDirectoryCosmeticsLoading = false;

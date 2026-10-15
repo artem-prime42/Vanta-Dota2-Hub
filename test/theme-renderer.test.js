@@ -52,6 +52,13 @@ test('theme descriptions select custom translations and localized VANTA copy by 
   assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext(`localizedTheme(${JSON.stringify(customTheme)})`, context))), { name: 'English name', description: 'English description' });
 });
 
+test('theme store keeps local filters and removes the Catalog tab', async () => {
+  const source = await fs.readFile(path.join(root, 'renderer/settings-page.js'), 'utf8');
+  assert.match(source, /data-theme-filter="all"/);
+  assert.match(source, /data-theme-filter="my"/);
+  assert.doesNotMatch(source, /data-theme-filter="catalog"/);
+});
+
 test('theme details expose the author avatar and a link to the author profile', async () => {
   const settingsPage = await fs.readFile(path.join(root, 'renderer/settings-page.js'), 'utf8');
   assert.match(settingsPage, /class="author-link theme-details-author" data-theme-author=/);

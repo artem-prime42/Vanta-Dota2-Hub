@@ -77,8 +77,8 @@ function libraryCategoryOrder(category) {
   const key = normalizeLibraryCategoryKey(category);
   return { packs: 0, heroes: 1, 'hero-sounds': 2, other: 3, world: 4, interface: 5, effects: 6 }[key] ?? 99;
 }
-function libraryFilterForItem(item) { if (item.type === 'pack' || item.categoryId === 'packs') return 'packs'; const category = normalizeLibraryCategoryKey(item.categoryId || item.category || ''); if (['heroes', 'hero-items', 'herofx'].includes(category)) return 'heroes'; if (category === 'hero-sounds') return 'hero-sounds'; if (['terrains', 'trees', 'river', 'creeps', 'towers', 'weather', 'roshan', 'ancient', 'tormentor', 'wards', 'couriers', 'pedestal', 'creep-deny'].includes(category)) return 'world'; if (['backgrounds', 'huds', 'emblems', 'versus-screens', 'item-icons', 'ranks', 'pings', 'cursors'].includes(category)) return 'interface'; if (['shaders', 'ti-bp-effects', 'item-effects', 'ranged-attack', 'high-five'].includes(category)) return 'effects'; return 'other'; }
-function libraryFilterOptions() { const russian = state.data?.settings?.appLanguage === 'ru'; return [{ id: 'all', ru: 'Все', en: 'All' }, { id: 'heroes', ru: 'Герои', en: 'Heroes' }, { id: 'world', ru: 'Мир', en: 'World' }, { id: 'interface', ru: 'Интерфейс', en: 'Interface' }, { id: 'effects', ru: 'Эффекты', en: 'Effects' }, { id: 'other', ru: 'Остальное', en: 'Other' }].map((option) => ({ ...option, label: russian ? option.ru : option.en })); }
+function libraryFilterForItem(item) { if (item.type === 'pack' || item.categoryId === 'packs') return 'packs'; const category = normalizeLibraryCategoryKey(item.categoryId || item.category || ''); if (['heroes', 'hero-items', 'herofx'].includes(category)) return 'heroes'; if (category === 'hero-sounds') return 'hero-sounds'; if (['terrains', 'trees', 'river', 'creeps', 'towers', 'weather', 'roshan', 'ancient', 'tormentor', 'wards', 'couriers', 'pedestal', 'creep-deny', 'kill-effects', 'maps', 'landscapes'].includes(category)) return 'world'; if (['backgrounds', 'huds', 'loading-screens', 'versus-screens', 'announcers', 'mega-kill', 'kill-streak', 'music', 'emblems', 'item-icons', 'ranks', 'pings', 'cursors'].includes(category)) return 'interface'; if (['shaders', 'ti-bp-effects', 'item-effects', 'ranged-attack', 'high-five'].includes(category)) return 'effects'; return 'other'; }
+function libraryFilterOptions() { const russian = state.data?.settings?.appLanguage === 'ru'; return [{ id: 'all', ru: 'Все', en: 'All' }, { id: 'heroes', ru: 'Герои', en: 'Heroes' }, { id: 'world', ru: 'Мир', en: 'World' }, { id: 'interface', ru: 'Интерфейс', en: 'Interface' }].map((option) => ({ ...option, label: russian ? option.ru : option.en })); }
 
 function libraryHeroGroup(item) {
   const key = normalizeHeroId(item.hero || item.heroId || item.heroName || item.heroLabel);
@@ -141,6 +141,32 @@ function libraryGeneratedCosmeticItems() {
       generatedCosmetic: true,
     });
   }
+  const globalPicks = state.data?.settings?.schemaCosmeticLoadout || data?.globalPicks || {};
+  for (const [slotId, rawSelection] of Object.entries(globalPicks)) {
+    const itemId = String(typeof rawSelection === 'object' ? rawSelection?.itemId || '' : rawSelection || '');
+    const styleId = typeof rawSelection === 'object' ? String(rawSelection?.styleId || '') : '';
+    if (!itemId) continue;
+    const globalSlot = data?.globalSlots?.find((entry) => String(entry.id) === String(slotId));
+    const option = globalSlot?.options?.find((entry) => String(entry.itemId || entry.id) === itemId && String(entry.styleId || '') === styleId);
+    if (!globalSlot || !option) continue;
+    result.push({
+      id: `cosmetic:global:${slotId}`,
+      modId: `cosmetic:global:${slotId}`,
+      libraryKind: 'generated-cosmetic',
+      generatedCosmetic: true,
+      globalCosmetic: true,
+      cosmeticSlotId: slotId,
+      cosmeticItemId: itemId,
+      cosmeticStyleId: styleId,
+      name: option.name || (state.data?.settings?.appLanguage === 'ru' ? `Предмет ${itemId}` : `Item ${itemId}`),
+      displayName: option.name || (state.data?.settings?.appLanguage === 'ru' ? `Предмет ${itemId}` : `Item ${itemId}`),
+      slot: globalSlot.name || globalSlot.id,
+      categoryId: globalSlot.categoryId || 'world',
+      previewUrl: option.previewUrl || null,
+      previewFallbackUrl: option.previewFallbackUrl || null,
+      enabled: true,
+    });
+  }
   return result;
 }
 function isGeneratedCosmeticItem(item) { return item?.libraryKind === 'generated-cosmetic' || item?.generatedCosmetic === true; }
@@ -166,7 +192,7 @@ function showUnifiedPackContents(pack) {
 
 function skinPresetEntries(preset) {
   const heroes = state.data?.cosmetics?.heroes || [];
-  return Object.entries(preset?.picks || {}).map(([slotId, selection]) => {
+  const heroEntries = Object.entries(preset?.picks || {}).map(([slotId, selection]) => {
     if (!slotId.startsWith('item:')) return null;
     const itemId = String(typeof selection === 'object' ? selection?.itemId || '' : selection || '');
     const styleId = typeof selection === 'object' ? String(selection?.styleId || '') : '';
@@ -184,6 +210,21 @@ function skinPresetEntries(preset) {
       previewUrl: option?.previewUrl || null,
     };
   }).filter(Boolean);
+  const globalSlots = state.data?.cosmetics?.globalSlots || [];
+  const globalEntries = Object.entries(preset?.globalPicks || {}).map(([slotId, selection]) => {
+    const itemId = String(typeof selection === 'object' ? selection?.itemId || '' : selection || '');
+    const styleId = typeof selection === 'object' ? String(selection?.styleId || '') : '';
+    const slot = globalSlots.find((entry) => String(entry.id) === slotId);
+    const option = slot?.options?.find((entry) => String(entry.itemId || entry.id) === itemId && String(entry.styleId || '') === styleId);
+    if (!itemId || !slot || !option) return null;
+    return {
+      slotId: `global:${slotId}`,
+      name: option.name || `${slot.name || slot.id} · ${itemId}`,
+      subtitle: [slot.name || slot.id, option.styleName].filter(Boolean).join(' · '),
+      previewUrl: option.previewUrl || null,
+    };
+  }).filter(Boolean);
+  return [...heroEntries, ...globalEntries];
 }
 
 function skinPresetContentsMarkup(preset) {
@@ -258,7 +299,7 @@ function renderLibrary() {
     const dragHandle = isPinnedPatch || generatedCosmetic ? '' : `<button type="button" class="library-drag-handle" draggable="true" aria-label="Reorder mod" data-library-drag-id="${libraryEscape(id)}"><span class="drag-dots"><i></i><i></i><i></i><i></i><i></i><i></i></span></button>`;
     const toggleButton = isPinnedPatch || generatedCosmetic || selected.size ? '' : `<button class="toggle-button ${item.enabled !== false ? 'on' : ''}" data-library-toggle="${libraryEscape(id)}" data-library-enabled="${item.enabled !== false}">${item.enabled !== false ? t('catalog.actionEnabled', 'Enabled') : t('catalog.actionDisabled', 'Disabled')}</button>`;
     const metadata = generatedCosmetic
-      ? [item.heroLabel, librarySlotLabel(item.slot), item.unusualEffect].filter(Boolean).map(libraryEscape).join(' · ')
+      ? [item.heroLabel, item.globalCosmetic ? libraryCategory(item) : '', librarySlotLabel(item.slot), item.unusualEffect].filter(Boolean).map(libraryEscape).join(' · ')
       : `${libraryEscape(libraryCategory(item))}${item.heroLabel ? ` · ${libraryEscape(item.heroLabel)}` : ''}${item.slot ? ` · ${libraryEscape(librarySlotLabel(item.slot))}` : ''}`;
     const patchInfo = generatedCosmetic ? '' : isPinnedPatch ? (() => {
       const record = findLibraryItem(id) || state.data?.installed?.[id] || null;
@@ -272,9 +313,14 @@ function renderLibrary() {
       return `<small>${specialPatchText('Версия патча', 'Patch revision')}: ${libraryEscape(revision)}</small><small><span class="special-patch-badge">PATCH</span> <span>${libraryEscape(statusText)}</span></small>`;
     })() : `<small>${libraryEscape(libraryPriorityLabel(item))} · ${libraryEscape(fileName)} · ${item.enabled === false ? t('catalog.actionDisabled', 'Disabled') : t('catalog.actionEnabled', 'Enabled')}</small>`;
     const actions = generatedCosmetic
-      ? `<button class="action secondary" data-library-cosmetic-remove="${libraryEscape(item.cosmeticSlotId)}">${t('catalog.removeCosmeticItem', 'Remove skin')}</button>`
+      ? item.globalCosmetic
+        ? `<button class="action secondary" data-library-global-cosmetic-remove="${libraryEscape(item.cosmeticSlotId)}">${t('catalog.removeCosmeticItem', 'Remove item')}</button>`
+        : `<button class="action secondary" data-library-cosmetic-remove="${libraryEscape(item.cosmeticSlotId)}">${t('catalog.removeCosmeticItem', 'Remove skin')}</button>`
       : selected.size ? '' : `<button class="action secondary" data-library-remove="${libraryEscape(id)}">${t('catalog.uninstall', 'Remove')}</button>`;
-    return `<article class="library-mod ${pack ? 'library-pack-item' : ''} ${generatedCosmetic ? 'library-generated-cosmetic-item' : ''} ${selected.has(id) ? 'selected' : ''} ${isPinnedPatch ? 'library-special-patch-row' : ''}" data-library-id="${libraryEscape(id)}">${checkbox}${dragHandle}${item.previewUrl ? `<img src="${libraryEscape(item.previewUrl)}" loading="lazy" alt="">` : '<div class="library-thumb-empty">◈</div>'}<div class="library-mod-info"><strong>${libraryEscape(name)}</strong>${metadata ? `<small>${metadata}</small>` : ''}${patchInfo}</div><div class="library-mod-actions">${toggleButton}${packButton}${actions}</div></article>`;
+    const preview = item.previewUrl
+      ? `<img src="${libraryEscape(item.previewUrl)}"${item.previewFallbackUrl ? ` data-fallback-url="${libraryEscape(item.previewFallbackUrl)}"` : ''} loading="lazy" alt="">`
+      : item.previewFallbackUrl ? `<img src="${libraryEscape(item.previewFallbackUrl)}" loading="lazy" alt="">` : '<div class="library-thumb-empty" aria-hidden="true"></div>';
+    return `<article class="library-mod ${pack ? 'library-pack-item' : ''} ${generatedCosmetic ? 'library-generated-cosmetic-item' : ''} ${selected.has(id) ? 'selected' : ''} ${isPinnedPatch ? 'library-special-patch-row' : ''}" data-library-id="${libraryEscape(id)}">${checkbox}${dragHandle}${preview}<div class="library-mod-info"><strong>${libraryEscape(name)}</strong>${metadata ? `<small>${metadata}</small>` : ''}${patchInfo}</div><div class="library-mod-actions">${toggleButton}${packButton}${actions}</div></article>`;
   };
   const sections = [...groups.entries()].sort(([left], [right]) => libraryCategoryOrder(left) - libraryCategoryOrder(right) || left.localeCompare(right)).map(([category, categoryItems]) => {
     const title = category === 'heroes' ? libraryFilterOptions().find((option) => option.id === 'heroes').label : category;
@@ -282,12 +328,21 @@ function renderLibrary() {
     return `<section class="library-section"><div class="library-section-heading"><h2>${libraryEscape(title)}</h2><span>${categoryItems.length}</span></div>${content}</section>`;
   }).join('');
   const russian = state.data?.settings?.appLanguage === 'ru';
-  const cosmeticPicksExist = Object.keys(state.data.settings?.cosmeticLoadout || {}).length > 0 || Boolean(state.data.installed?.['vanta-generated-cosmetics']);
+  const cosmeticPicksExist = Object.keys(state.data.settings?.cosmeticLoadout || {}).length > 0
+    || Object.keys(state.data.settings?.schemaCosmeticLoadout || state.data.cosmetics?.globalPicks || {}).length > 0
+    || Boolean(state.data.installed?.['vanta-generated-cosmetics']);
   const deletableCount = libraryInstalledItems().filter((item) => !(item.modType === 'special_patch' && item.specialType === 'cosmetics')).length + (cosmeticPicksExist ? 1 : 0);
   const skinPresets = Array.isArray(state.data.settings?.skinLoadoutPresets) ? state.data.settings.skinLoadoutPresets : [];
-  const appliedSkinCount = Object.keys(state.data.settings?.cosmeticLoadout || {}).length;
-  const presetSection = `<section class="library-section skin-presets-section"><div class="library-section-heading"><h2>${t('catalog.skinSets')}</h2><span>${skinPresets.length}</span><button class="action secondary" id="library-save-skin-set" ${appliedSkinCount ? '' : 'disabled'}>${t('catalog.saveSkinSet')}</button></div>${skinPresets.length ? `<div class="skin-preset-list">${skinPresets.map((preset) => `<article class="skin-preset-row"><div><strong>${libraryEscape(preset.name)}</strong><small>${formatTranslation(t('catalog.skinSetCount', '{count} skins'), { count: Object.keys(preset.picks || {}).length })}</small></div><div class="skin-preset-actions"><button class="action secondary skin-preset-view" data-skin-preset-view="${libraryEscape(preset.id)}" aria-label="${state.data?.settings?.appLanguage === 'ru' ? 'Показать моды набора' : 'Show set mods'}" title="${state.data?.settings?.appLanguage === 'ru' ? 'Показать моды набора' : 'Show set mods'}">!</button><button class="action" data-skin-preset-apply="${libraryEscape(preset.id)}">${t('catalog.applySkinSet')}</button><button class="action secondary" data-skin-preset-delete="${libraryEscape(preset.id)}">${t('catalog.deleteSkinSet')}</button></div></article>`).join('')}</div>` : `<p class="skin-preset-empty">${t('catalog.skinSetEmpty')}</p>`}</section>`;
+  const appliedSkinCount = Object.keys(state.data.settings?.cosmeticLoadout || {}).length
+    + Object.keys(state.data.settings?.schemaCosmeticLoadout || state.data.cosmetics?.globalPicks || {}).length;
+  const presetSection = `<section class="library-section skin-presets-section"><div class="library-section-heading"><h2>${t('catalog.skinSets')}</h2><span>${skinPresets.length}</span><button class="action secondary" id="library-save-skin-set" ${appliedSkinCount ? '' : 'disabled'}>${t('catalog.saveSkinSet')}</button></div>${skinPresets.length ? `<div class="skin-preset-list">${skinPresets.map((preset) => `<article class="skin-preset-row"><div><strong>${libraryEscape(preset.name)}</strong><small>${formatTranslation(t('catalog.skinSetCount', '{count} skins'), { count: Object.keys(preset.picks || {}).length + Object.keys(preset.globalPicks || {}).length })}</small></div><div class="skin-preset-actions"><button class="action secondary skin-preset-view" data-skin-preset-view="${libraryEscape(preset.id)}" aria-label="${state.data?.settings?.appLanguage === 'ru' ? 'Показать моды набора' : 'Show set mods'}" title="${state.data?.settings?.appLanguage === 'ru' ? 'Показать моды набора' : 'Show set mods'}">!</button><button class="action" data-skin-preset-apply="${libraryEscape(preset.id)}">${t('catalog.applySkinSet')}</button><button class="action secondary" data-skin-preset-delete="${libraryEscape(preset.id)}">${t('catalog.deleteSkinSet')}</button></div></article>`).join('')}</div>` : `<p class="skin-preset-empty">${t('catalog.skinSetEmpty')}</p>`}</section>`;
   $('#content').innerHTML = `<div class="library-header"><div><p class="eyebrow">VANTAMODS</p><p>${t('catalog.libraryManage', 'Manage local VPK packages and their game deployment.')}</p><small class="library-reinstall-hint">${t('catalog.reinstallingMods')}</small><div class="library-filters" role="tablist" aria-label="${t('catalog.libraryFilters', 'Library filters')}">${libraryFilterOptions().map((option) => `<button class="library-filter ${filter === option.id ? 'active' : ''}" data-library-filter="${option.id}">${option.label}</button>`).join('')}</div></div><div class="library-header-actions"><button class="action" id="library-reinstall">${t('catalog.reinstallMods')}</button><button class="action secondary" id="library-delete-all" ${deletableCount ? '' : 'disabled'}>${t('catalog.deleteAll', 'Delete all')}</button></div></div>${presetSection}<div class="library-bulk"><span>${selected.size} ${t('catalog.selectedShort', 'selected')}</span><button class="action secondary" id="library-remove-selected" ${selected.size ? '' : 'disabled'}>${t('common.delete', 'Delete')}</button></div>${sections || `<div class="empty"><strong>${t('catalog.libraryEmptyTitle', 'Library is empty')}</strong>${t('catalog.libraryEmptyHint', 'Install mods to add them to your managed Library.')}</div>`}`;
+  $('#content').innerHTML = `<div class="library-header"><div><p class="eyebrow">VANTAMODS</p><p>${t('catalog.libraryManage', 'Manage local VPK packages and their game deployment.')}</p><small class="library-reinstall-hint">${t('catalog.reinstallingMods')}</small><div class="library-filters" role="tablist" aria-label="${t('catalog.libraryFilters', 'Library filters')}">${libraryFilterOptions().map((option) => `<button class="library-filter ${filter === option.id ? 'active' : ''}" data-library-filter="${option.id}">${option.label}</button>`).join('')}</div></div><div class="library-header-actions"><button class="action" id="library-reinstall">${t('catalog.reinstallMods')}</button><button class="action secondary" id="library-delete-all" ${deletableCount ? '' : 'disabled'}>${t('catalog.deleteAll', 'Delete all')}</button></div></div>${presetSection}<div class="library-bulk"><span>${selected.size} ${t('catalog.selectedShort', 'selected')}</span><button class="action secondary" id="library-remove-selected" ${selected.size ? '' : 'disabled'}>${t('common.delete', 'Delete')}</button></div>${sections || `<div class="empty"><strong>${t('catalog.libraryEmptyTitle', 'Library is empty')}</strong>${t('catalog.libraryEmptyHint', 'Install mods to add them to your managed Library.')}</div>`}`;
+  document.querySelectorAll('[data-fallback-url]').forEach((image) => image.addEventListener('error', () => {
+    const fallback = image.dataset.fallbackUrl;
+    image.removeAttribute('data-fallback-url');
+    if (fallback) image.src = fallback;
+  }, { once: true }));
   bindLibrarySearch();
   bindUnifiedLibrary();
   renderExternalFiles();
@@ -397,6 +452,19 @@ function bindUnifiedLibrary() {
       renderLibrary();
     } catch (error) { toast(error.message); }
   }; });
+  document.querySelectorAll('[data-library-global-cosmetic-remove]').forEach((button) => { button.onclick = async () => {
+    const slotId = button.dataset.libraryGlobalCosmeticRemove;
+    const confirmation = await showAppConfirmDialog({ title: t('catalog.removeCosmeticItemTitle', 'Remove selected item'), message: t('catalog.removeCosmeticItemConfirm', 'Remove this item from the generated loadout?'), confirmLabel: t('catalog.removeCosmeticItem', 'Remove item'), destructive: true });
+    if (!confirmation.confirmed) return;
+    try {
+      const picks = { ...(state.data.settings?.schemaCosmeticLoadout || state.data.cosmetics?.globalPicks || {}) };
+      delete picks[slotId];
+      await call('cosmetics:global-apply', { picks });
+      state.librarySelection.delete(`cosmetic:global:${slotId}`);
+      state.data = await call('library:get');
+      renderLibrary();
+    } catch (error) { toast(error.message); }
+  }; });
   document.querySelectorAll('[data-pack-content]').forEach((button) => { button.onclick = async () => { try { showUnifiedPackContents(await call('library:pack-contents', { id: button.dataset.packContent })); } catch (error) { toast(/missing/i.test(error.message) ? t('savedPacks.fileMissing', 'Saved pack file was not found.') : t('savedPacks.viewerError', 'Could not open pack contents.')); } }; });
   document.querySelectorAll('.library-drag-handle').forEach((handle) => {
     handle.addEventListener('dragstart', (event) => {
@@ -443,7 +511,8 @@ function bindUnifiedLibrary() {
   $('#library-delete-all')?.addEventListener('click', async () => {
     const managed = libraryInstalledItems().filter((item) => !(item.modType === 'special_patch' && item.specialType === 'cosmetics'));
     const cosmeticPicks = Object.keys(state.data.settings?.cosmeticLoadout || {});
-    const hasGeneratedCosmetics = cosmeticPicks.length > 0 || Boolean(state.data.installed?.['vanta-generated-cosmetics']);
+    const globalCosmeticPicks = Object.keys(state.data.settings?.schemaCosmeticLoadout || state.data.cosmetics?.globalPicks || {});
+    const hasGeneratedCosmetics = cosmeticPicks.length > 0 || globalCosmeticPicks.length > 0 || Boolean(state.data.installed?.['vanta-generated-cosmetics']);
     const count = managed.length + (hasGeneratedCosmetics ? 1 : 0);
     if (!count) return;
     const confirmation = await showAppConfirmDialog({
@@ -454,7 +523,8 @@ function bindUnifiedLibrary() {
     });
     if (!confirmation.confirmed) return;
     try {
-      if (hasGeneratedCosmetics) await call('cosmetics:apply', { picks: {} });
+      if (cosmeticPicks.length) await call('cosmetics:apply', { picks: {} });
+      if (globalCosmeticPicks.length) await call('cosmetics:global-apply', { picks: {} });
       for (const item of managed) await call('mod:uninstall', { id: libraryItemId(item) });
       state.librarySelection.clear();
       state.data = await call('library:get');
@@ -466,9 +536,10 @@ function bindUnifiedLibrary() {
     }
   });
   $('#library-pack')?.addEventListener('click', () => { const ids = [...state.librarySelection].filter((id) => !id.startsWith('external:') && !id.startsWith('cosmetic:item:')); if (ids.length < 2) return toast(t('catalog.selectAtLeastTwoMods', 'Select at least two mods to merge.')); openMergePackDialog(ids); });
-  const selectedManaged = () => [...state.librarySelection].filter((id) => !id.startsWith('external:') && !id.startsWith('cosmetic:item:'));
+  const selectedManaged = () => [...state.librarySelection].filter((id) => !id.startsWith('external:') && !id.startsWith('cosmetic:item:') && !id.startsWith('cosmetic:global:'));
   const selectedCosmetics = () => [...state.librarySelection].filter((id) => id.startsWith('cosmetic:item:')).map((id) => id.slice('cosmetic:'.length));
-  $('#library-remove-selected')?.addEventListener('click', async () => { const managed = selectedManaged(); const cosmetics = selectedCosmetics(); const external = [...state.librarySelection].filter((value) => value.startsWith('external:')); if (!managed.length && !cosmetics.length && !external.length) return toast(t('catalog.selectModFirst', 'Select a mod first.')); const confirmation = await showAppConfirmDialog({ title: t('catalog.removeSelectedModTitle', 'Remove selected mods'), message: formatTranslation(t('catalog.removeSelectedCount', 'Remove {count} selected mod(s)?'), { count: managed.length + cosmetics.length + external.length }), confirmLabel: t('catalog.uninstall', 'Remove'), destructive: true }); if (!confirmation.confirmed) return; for (const id of managed) await call('mod:uninstall', { id }); for (const id of external) { const file = state.data.external.find((item) => item.id === id); if (file) await call('external:remove', { relativePath: file.relativePath }); } if (cosmetics.length) { const picks = { ...(state.data.settings?.cosmeticLoadout || {}) }; cosmetics.forEach((slotId) => { delete picks[slotId]; delete picks[`effect:${slotId}`]; }); await call('cosmetics:apply', { picks }); } state.librarySelection.clear(); state.data = await call('library:get'); if (cosmetics.length) state.data.cosmetics = await call('cosmetics:list'); renderLibrary(); });
+  const selectedGlobalCosmetics = () => [...state.librarySelection].filter((id) => id.startsWith('cosmetic:global:')).map((id) => id.slice('cosmetic:global:'.length));
+  $('#library-remove-selected')?.addEventListener('click', async () => { const managed = selectedManaged(); const cosmetics = selectedCosmetics(); const globalCosmetics = selectedGlobalCosmetics(); const external = [...state.librarySelection].filter((value) => value.startsWith('external:')); if (!managed.length && !cosmetics.length && !globalCosmetics.length && !external.length) return toast(t('catalog.selectModFirst', 'Select a mod first.')); const confirmation = await showAppConfirmDialog({ title: t('catalog.removeSelectedModTitle', 'Remove selected mods'), message: formatTranslation(t('catalog.removeSelectedCount', 'Remove {count} selected mod(s)?'), { count: managed.length + cosmetics.length + globalCosmetics.length + external.length }), confirmLabel: t('catalog.uninstall', 'Remove'), destructive: true }); if (!confirmation.confirmed) return; for (const id of managed) await call('mod:uninstall', { id }); for (const id of external) { const file = state.data.external.find((item) => item.id === id); if (file) await call('external:remove', { relativePath: file.relativePath }); } if (cosmetics.length) { const picks = { ...(state.data.settings?.cosmeticLoadout || {}) }; cosmetics.forEach((slotId) => { delete picks[slotId]; delete picks[`effect:${slotId}`]; }); await call('cosmetics:apply', { picks }); } if (globalCosmetics.length) { const picks = { ...(state.data.settings?.schemaCosmeticLoadout || state.data.cosmetics?.globalPicks || {}) }; globalCosmetics.forEach((slotId) => delete picks[slotId]); await call('cosmetics:global-apply', { picks }); } state.librarySelection.clear(); state.data = await call('library:get'); renderLibrary(); });
 }
 
 window.renderLibrary = renderLibrary;

@@ -31,6 +31,17 @@ test('library cards expose styled leftmost checkboxes and keep skin removal visi
   assert.match(ui, /call\('cosmetics:preset-apply'/);
 });
 
+test('Library filter buttons omit Effects and Other', async () => {
+  const ui = await fs.readFile(path.join(root, 'renderer/library-unified-ui.js'), 'utf8');
+  const context = vm.createContext({ window: {}, state: { data: { settings: { appLanguage: 'ru' } } } });
+  vm.runInContext(ui, context, { filename: 'library-unified-ui.js' });
+
+  const options = JSON.parse(JSON.stringify(context.libraryFilterOptions()));
+
+  assert.deepEqual(options.map((option) => option.id), ['all', 'heroes', 'world', 'interface']);
+  assert.equal(options.some((option) => ['Эффекты', 'Остальное'].includes(option.label)), false);
+});
+
 test('saved skin-set contents can be inspected and individual mods removed with an accessible control', async () => {
   const [ui, css] = await Promise.all([
     fs.readFile(path.join(root, 'renderer/library-unified-ui.js'), 'utf8'),
@@ -79,7 +90,35 @@ test('generated skin entries show one hero-slot line with an optional localized 
     { heroLabel: 'Anti Mage', slot: 'Броня', unusualEffect: 'Огонь' },
     { heroLabel: 'Axe', slot: 'Оружие', unusualEffect: '' },
   ]);
-  assert.match(ui, /\[item\.heroLabel, librarySlotLabel\(item\.slot\), item\.unusualEffect\]\.filter\(Boolean\)/);
+  assert.match(ui, /\[item\.heroLabel, item\.globalCosmetic \? libraryCategory\(item\) : '', librarySlotLabel\(item\.slot\), item\.unusualEffect\]\.filter\(Boolean\)/);
   assert.match(ui, /const patchInfo = generatedCosmetic \? ''/);
   assert.match(ui, /\$\{metadata \? `<small>\$\{metadata\}<\/small>` : ''\}/);
+});
+
+test('selected global cosmetics appear as generated Library entries with their category and fallback image', async () => {
+  const ui = await fs.readFile(path.join(root, 'renderer/library-unified-ui.js'), 'utf8');
+  const context = vm.createContext({
+    window: {},
+    state: {
+      data: {
+        settings: { appLanguage: 'en', schemaCosmeticLoadout: { weather: '10704', music: '100' } },
+        cosmetics: { globalSlots: [
+          { id: 'weather', targetId: '555', name: 'Weather', categoryId: 'weather', options: [{ itemId: '10704', name: 'Snow Weather', previewUrl: null, previewFallbackUrl: 'https://steam.test/snow.png' }] },
+          { id: 'music', targetId: '588', name: 'Music', categoryId: 'music', options: [{ itemId: '100', name: 'Aurora Music', previewUrl: 'https://media.test/music.webp', previewFallbackUrl: 'https://steam.test/music.png' }] },
+        ] },
+      },
+    },
+    normalizeHeroId: (value) => String(value || '').toLowerCase(),
+    slotLabel: (value) => value,
+    cosmeticEffectLabel: (effectId) => effectId,
+  });
+  vm.runInContext(ui, context, { filename: 'library-unified-ui.js' });
+  const entries = context.libraryGeneratedCosmeticItems();
+
+  assert.deepEqual(JSON.parse(JSON.stringify(entries.map(({ name, categoryId, globalCosmetic, previewUrl, previewFallbackUrl }) => ({ name, categoryId, globalCosmetic, previewUrl, previewFallbackUrl })))), [
+    { name: 'Snow Weather', categoryId: 'weather', globalCosmetic: true, previewUrl: null, previewFallbackUrl: 'https://steam.test/snow.png' },
+    { name: 'Aurora Music', categoryId: 'music', globalCosmetic: true, previewUrl: 'https://media.test/music.webp', previewFallbackUrl: 'https://steam.test/music.png' },
+  ]);
+  assert.match(ui, /data-library-global-cosmetic-remove=/);
+  assert.match(ui, /cosmetics:global-apply/);
 });

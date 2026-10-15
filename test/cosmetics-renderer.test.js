@@ -55,6 +55,7 @@ test('late cosmetics apply response cannot replace the Mods page with the old co
 
 test('cosmetic cards preserve style IDs and render Infused quality as a distinct badge', () => {
   const source = fs.readFileSync(path.join(__dirname, '../renderer/cosmetics-ui.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '../renderer/cosmetics.css'), 'utf8');
   assert.match(source, /data-cosmetic-style="\$\{cosmeticsHtml\(option\.styleId \?\? ''\)\}"/);
   assert.match(source, /data-inline-cosmetic-style="\$\{cosmeticsHtml\(option\.styleId \?\? ''\)\}"/);
   assert.match(source, /infused: 'Infused'/);
@@ -70,6 +71,15 @@ test('cosmetic cards preserve style IDs and render Infused quality as a distinct
   assert.match(source, /data-effect-cancel>\$\{cosmeticsText\('Отмена', 'Cancel'\)\}/);
   assert.doesNotMatch(source, /data-effect-cancel">/);
   assert.doesNotMatch(source, /\$\{selected \? `<button type="button" class="skin-card-effect-button"/);
+  assert.match(styles, /\.skin-card-quality[^}]*opacity: 0/);
+  assert.match(styles, /\.cosmetic-skin-card:hover \.skin-card-quality, \.cosmetic-skin-card:focus-within \.skin-card-quality \{ opacity: 1/);
+});
+
+test('Weather and Tower selectors are not duplicated in Cosmetics', () => {
+  const ui = fs.readFileSync(path.join(__dirname, '../renderer/cosmetics-ui.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '../renderer/cosmetics.css'), 'utf8');
+  assert.doesNotMatch(ui, /renderSpecialPatchPicker|specialPatches/);
+  assert.doesNotMatch(styles, /cosmetics-map-appearance/);
 });
 
 test('choosing another style of the same item keeps its unusual effect selection', () => {

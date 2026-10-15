@@ -27,8 +27,8 @@ const GUIDE_CONTENT = [
     id: 'matchmaking',
     title: { ru: 'Не пускает в поиск матча', en: 'Cannot enter matchmaking' },
     steps: {
-      ru: ['Полностью закройте Dota 2. Steam можно оставить открытым.', 'В Windows нажмите «Играть» в VANTA: встроенный сценарий исправит matchmaking и запустит Dota 2 через Steam.', 'Сценарий проверяет загружаемый файл и не открывает рекламные сайты.', 'Если поиск не заработал, перезапустите Steam, проверьте целостность файлов игры и временно отключите конфликтующие моды.'],
-      en: ['Fully close Dota 2. Steam can remain open.', 'On Windows, click Play in VANTA. Its bundled script repairs matchmaking and launches Dota 2 through Steam.', 'The script verifies its downloaded patch and does not open advertising websites.', 'If matchmaking still does not work, restart Steam, verify the game files, and temporarily disable conflicting mods.'],
+      ru: ['Кнопка «Играть» в VANTA запускает Dota 2 через Steam без изменения файлов игры.', 'Если Dota сообщает о небезопасном режиме, закройте игру, удалите параметры запуска вроде -insecure и проверьте целостность файлов в Steam.', 'Если предупреждение остаётся, временно отключите моды и патчи, меняющие файлы клиента; не пытайтесь обходить проверку безопасности.'],
+      en: ['VANTA Play launches Dota 2 through Steam without changing game files.', 'If Dota reports unsafe mode, close the game, remove launch options such as -insecure, and verify the game files in Steam.', 'If the warning remains, temporarily disable mods and patches that alter client files; do not bypass the safety check.'],
     },
   },
   {

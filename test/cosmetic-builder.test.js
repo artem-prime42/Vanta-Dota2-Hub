@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { VpkReader, VpkWriter } = require('vpk-tools');
-const { buildCosmeticListing, buildCosmeticReplacements, describeItems, itemNodes, sanitizeCosmeticSelections } = require('../src/application/cosmetic-builder');
+const { buildCosmeticListing, buildCosmeticReplacements, buildGlobalCosmeticReplacements, describeGlobalCosmetics, describeItems, itemNodes, sanitizeCosmeticSelections, sanitizeGlobalCosmeticSelections } = require('../src/application/cosmetic-builder');
 const { SpecialPatchService } = require('../src/application/special-patch-service');
 const { AppService } = require('../src/main/services/app-service');
 
@@ -103,6 +103,18 @@ test('builds local hero and slot options from the installed item schema', () => 
   assert.deepEqual(slot('back').options, []);
 });
 
+test('lists Broodmother skins from the installed items_game schema', () => {
+  const broodmotherSchema = `"items_game" { "prefabs" { "default_item" { "item_slot" "head" } "wearable" { "item_slot" "head" } } "items" {
+    "10" { "name" "Broodmother Default Head" "prefab" "default_item" "used_by_heroes" { "npc_dota_hero_broodmother" "1" } }
+    "20" { "name" "Broodmother Webbed Head" "prefab" "wearable" "item_slot" "head" "used_by_heroes" { "npc_dota_hero_broodmother" "1" } "image_inventory" "econ/items/broodmother/webbed_head" "model_player" "models/items/broodmother/webbed_head.vmdl" }
+  } }`;
+  const broodmother = describeItems(broodmotherSchema).find((hero) => hero.key === 'broodmother');
+
+  assert.ok(broodmother);
+  assert.equal(broodmother.name, 'Broodmother');
+  assert.deepEqual(broodmother.slots.find((slot) => slot.id === 'item:broodmother:head').options.map((option) => option.id), ['20']);
+});
+
 test('maps the selected wearable onto the hero default item and retains its native visuals and icon', () => {
   const replacements = buildCosmeticReplacements(schema, { 'item:axe:weapon': '20' });
   const patch = replacements.get('10');
@@ -114,6 +126,37 @@ test('maps the selected wearable onto the hero default item and retains its nati
   assert.match(patch.content, /particles\/econ\/items\/axe\/frostblade\/frost\.vpcf/);
   assert.doesNotMatch(patch.content, /"unlock"/);
   assert.doesNotMatch(patch.content, /"styles"/);
+});
+
+test('generates non-hero item_game options from base-item slots without changing hero cosmetic records', () => {
+  const globalSchema = `"items_game" { "items" {
+    "555" { "name" "Default Weather" "prefab" "weather" "baseitem" "1" }
+    "700" { "name" "Weather Aurora" "prefab" "weather" "visuals" { "particles" "particles/weather/aurora.vpcf" } }
+    "587" { "name" "Default HUD" "prefab" "hud_skin" "baseitem" "1" }
+    "701" { "name" "Arcade HUD" "prefab" "hud_skin" "visuals" { "layout" "arcade" } }
+    "10" { "name" "Axe Default Weapon" "prefab" "default_item" "item_slot" "weapon" "used_by_heroes" { "npc_dota_hero_axe" "1" } }
+    "20" { "name" "Axe Frostblade" "prefab" "wearable" "item_slot" "weapon" "used_by_heroes" { "npc_dota_hero_axe" "1" } "visuals" { "skin" "1" } }
+  } }`;
+  const slots = describeGlobalCosmetics(globalSchema);
+  const weather = slots.find((slot) => slot.id === 'weather');
+  const hud = slots.find((slot) => slot.id === 'hud_skin');
+  const sanitized = sanitizeGlobalCosmeticSelections(slots, { weather: '700', hud_skin: '999' });
+
+  assert.equal(weather.targetId, '555');
+  assert.equal(weather.categoryId, 'weather');
+  assert.equal(weather.options[0].itemId, '700');
+  assert.equal(hud.categoryId, 'huds');
+  assert.deepEqual(sanitized.selections, { weather: '700' });
+  assert.deepEqual(sanitized.discarded, [{ slotId: 'hud_skin', itemId: '999' }]);
+
+  const replacements = buildGlobalCosmeticReplacements(globalSchema, { weather: '700', hud_skin: '701' });
+  assert.deepEqual([...replacements.keys()], ['555', '587']);
+  assert.match(replacements.get('555').content, /"name"\s+"Default Weather"/);
+  assert.match(replacements.get('555').content, /aurora\.vpcf/);
+  assert.match(replacements.get('587').content, /"name"\s+"Default HUD"/);
+  const heroReplacement = buildCosmeticReplacements(globalSchema, { 'item:axe:weapon': '20' }).get('10').content;
+  assert.match(heroReplacement, /"name"\s+"Axe Default Weapon"/);
+  assert.match(heroReplacement, /"skin"\s+"1"/);
 });
 
 test('exposes alternate styles as separate options and applies their schema visuals to the generated default item', () => {
@@ -130,7 +173,121 @@ test('exposes alternate styles as separate options and applies their schema visu
   assert.doesNotMatch(replacement.content, /"skin"\s+"3"/);
 });
 
-test('hides the second Planetfall Arcana style and preserves first-style overrides', () => {
+test('discovers and generates particle effects for every alternate style using nested VPK effect keys', () => {
+  const effectStylesSchema = `"items_game" { "prefabs" { "default_item" { "item_slot" "weapon" } "wearable" { "item_slot" "weapon" } } "items" {
+    "10" { "name" "Axe Default Weapon" "prefab" "default_item" "used_by_heroes" { "npc_dota_hero_axe" "1" } }
+    "20" { "name" "Axe Effectblade" "prefab" "wearable" "item_slot" "weapon" "used_by_heroes" { "npc_dota_hero_axe" "1" }
+      "visuals" { "base_effect" "particles/axe/base.vpcf_c" "styles" {
+        "1" { "name" "Blue" "skin" "1" "particle_system" { "path" "particles/axe/blue.vpcf" } }
+        "2" { "name" "Red" "skin" "2" "particle_system" { "path" "particles/axe/red.vpcf" } }
+        "3" { "name" "Gold" "skin" "3" "particle_system" { "path" "particles/axe/gold.vpcf" } }
+      } }
+    }
+  } }`;
+  const heroes = describeItems(effectStylesSchema);
+  const options = heroes.find((hero) => hero.key === 'axe').slots[0].options;
+  for (const [styleId, effectName, skin] of [['1', 'blue', '1'], ['2', 'red', '2'], ['3', 'gold', '3']]) {
+    const option = options.find((entry) => entry.styleId === styleId);
+    assert.deepEqual(option.effects.sort(), ['base', effectName].sort());
+    const replacement = buildCosmeticReplacements(effectStylesSchema, {
+      'item:axe:weapon': { itemId: '20', styleId },
+    }).get('10');
+    assert.match(replacement.content, new RegExp(`particles/axe/${effectName}\\.vpcf`));
+    assert.match(replacement.content, new RegExp(`\\"skin\\"\\s+\\"${skin}\\"`));
+    assert.match(replacement.content, /particles\/axe\/base\.vpcf_c/);
+    for (const otherEffect of ['blue', 'red', 'gold'].filter((name) => name !== effectName)) {
+      assert.doesNotMatch(replacement.content, new RegExp(`particles/axe/${otherEffect}\\.vpcf`));
+    }
+  }
+});
+
+test('preserves inherited wearable icons, visuals, and ability particles when generating a styled item', async (t) => {
+  const inheritedSchema = `"items_game" { "prefabs" {
+    "default_item" { "item_slot" "head" }
+    "wearable" { "item_slot" "head" "image_inventory" "econ/items/invoker/dark_artistry_hair"
+      "visuals" { "asset_modifier" { "type" "particle_create" "modifier" "particles/items/dark_artistry_hair.vpcf" }
+        "attribute_controlled_attached_particles" { "particles" { "0" { "system" "particles/items/dark_artistry_spell_fx.vpcf" "attach_type" "follow_origin" } } }
+      }
+    }
+  } "store_currency_pricepoints" { "1" "base" } "items" {
+    "10" { "name" "Invoker Default Hair" "prefab" "default_item" "used_by_heroes" { "npc_dota_hero_invoker" "1" } }
+    "790" { "name" "Default Ability Effects 1" "prefab" "default_item" "item_slot" "ability_effects_1" "used_by_heroes" { "all" "1" } }
+    "791" { "name" "Default Ability Effects 2" "prefab" "default_item" "item_slot" "ability_effects_2" "used_by_heroes" { "all" "1" } }
+    "792" { "name" "Default Ability Effects 3" "prefab" "default_item" "item_slot" "ability_effects_3" "used_by_heroes" { "all" "1" } }
+    "796" { "name" "Default Ability Effects 7" "prefab" "default_item" "item_slot" "ability_effects_7" "used_by_heroes" { "all" "1" } }
+    "20" { "name" "Dark Artistry Hair" "prefab" "wearable" "used_by_heroes" { "npc_dota_hero_invoker" "1" }
+      "static_attributes" { "can_equip_as_ability_effects" "1" "can_equip_as_ability_effects" "2" "can_equip_as_ability_effects" "3" "can_equip_as_ability_effects" "7" }
+      "model_player" "models/items/invoker/dark_artistry_hair.vmdl"
+      "visuals" {
+        "alternate_icons" { "1" { "icon_path" "econ/items/invoker/dark_artistry_hair_model1" } }
+        "asset_modifier0" { "type" "particle" "asset" "particles/units/heroes/hero_invoker/exort.vpcf" "modifier" "particles/items/dark_artistry_exort.vpcf" "style" "1" "apply_when_equipped_in_ability_effects_slot" "1" }
+        "asset_modifier1" { "type" "particle" "asset" "particles/units/heroes/hero_invoker/quas.vpcf" "modifier" "particles/items/dark_artistry_quas.vpcf" "style" "1" "apply_when_equipped_in_ability_effects_slot" "2" }
+        "asset_modifier2" { "type" "particle" "asset" "particles/units/heroes/hero_invoker/wex.vpcf" "modifier" "particles/items/dark_artistry_wex.vpcf" "style" "1" "apply_when_equipped_in_ability_effects_slot" "3" }
+        "asset_modifier6" { "type" "ability_icon" "asset" "invoker_sun_strike" "modifier" "invoker/dark_artistry/sun_strike" "style" "1" "apply_when_equipped_in_ability_effects_slot" "7" }
+        "styles" { "1" { "name" "Style 1" "skin" "1" "alternate_icon" "1" "model_player" "models/items/invoker/dark_artistry_hair_style1.vmdl" "particle_system" { "path" "particles/items/dark_artistry_hair_style1.vpcf" } } }
+      }
+    }
+  } }`;
+  const replacements = buildCosmeticReplacements(inheritedSchema, {
+    'item:invoker:head': { itemId: '20', styleId: '1' },
+  });
+  const replacement = replacements.get('10');
+
+  assert.match(replacement.content, /"image_inventory"\s+"econ\/items\/invoker\/dark_artistry_hair"/);
+  assert.match(replacement.content, /"model_player"\s+"models\/items\/invoker\/dark_artistry_hair_style1\.vmdl"/);
+  assert.match(replacement.content, /particles\/items\/dark_artistry_hair\.vpcf/);
+  assert.match(replacement.content, /particles\/items\/dark_artistry_spell_fx\.vpcf/);
+  assert.match(replacement.content, /particles\/items\/dark_artistry_hair_style1\.vpcf/);
+  assert.match(replacement.content, /"visuals"\s*\{[^]*?"alternate_icon"\s+"1"/);
+  assert.equal(replacements.has('790'), true);
+  assert.equal(replacements.has('791'), true);
+  assert.equal(replacements.has('792'), true);
+  assert.equal(replacements.has('796'), true);
+  assert.match(replacements.get('790').content, /dark_artistry_exort\.vpcf/);
+  assert.match(replacements.get('791').content, /dark_artistry_quas\.vpcf/);
+  assert.match(replacements.get('792').content, /dark_artistry_wex\.vpcf/);
+  assert.match(replacements.get('796').content, /dark_artistry\/sun_strike/);
+  assert.doesNotMatch(replacement.content, /"prefab"\s+"wearable"/);
+
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-inherited-cosmetic-vpk-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const gamePath = path.join(root, 'game');
+  const pak01 = path.join(gamePath, 'dota', 'pak01_dir.vpk');
+  await fs.mkdir(path.dirname(pak01), { recursive: true });
+  const writer = new VpkWriter();
+  writer.addFile('scripts/items/items_game.txt', Buffer.from(inheritedSchema));
+  writer.write(pak01);
+  const service = new SpecialPatchService({
+    rootDir: root,
+    storage: { state: { installedMods: {}, settings: {} }, patch: async () => {} },
+    getGamePath: () => gamePath,
+    getMods: () => [],
+    fetchImpl: async () => { throw new Error('styled cosmetic generation must not use the network'); },
+    processRunning: async () => false,
+    onDiagnostics: () => {},
+  });
+  const generatedPath = path.join(root, 'styled-cosmetic.vpk');
+
+  await service.createPatchedVpk(pak01, [], generatedPath, {
+    'item:invoker:head': { itemId: '20', styleId: '1' },
+  });
+
+  const generated = VpkReader.open(generatedPath);
+  try {
+    const output = generated.readFile('scripts/items/items_game.txt').toString('utf8');
+    assert.match(output, /"image_inventory"\s+"econ\/items\/invoker\/dark_artistry_hair"/);
+    const generatedItems = new Map(itemNodes(output).map((item) => [item.id, output.slice(item.start, item.end)]));
+    assert.match(generatedItems.get('10'), /particles\/items\/dark_artistry_hair\.vpcf/);
+    assert.match(generatedItems.get('10'), /particles\/items\/dark_artistry_spell_fx\.vpcf/);
+    assert.match(generatedItems.get('10'), /particles\/items\/dark_artistry_hair_style1\.vpcf/);
+    assert.match(generatedItems.get('790'), /dark_artistry_exort\.vpcf/);
+    assert.match(generatedItems.get('791'), /dark_artistry_quas\.vpcf/);
+    assert.match(generatedItems.get('792'), /dark_artistry_wex\.vpcf/);
+    assert.match(generatedItems.get('796'), /dark_artistry\/sun_strike/);
+  } finally { generated.close(); }
+});
+
+test('exposes and generates every Planetfall Arcana style with its style-specific effects', () => {
   const planetfallSchema = `"items_game" { "prefabs" { "default_item" { "item_slot" "weapon" } "wearable" { "item_slot" "weapon" } } "items" {
     "10" { "name" "Earthshaker Default Weapon" "prefab" "default_item" "used_by_heroes" { "npc_dota_hero_earthshaker" "1" } }
     "20" {
@@ -151,13 +308,14 @@ test('hides the second Planetfall Arcana style and preserves first-style overrid
   } }`;
   const options = describeItems(planetfallSchema).find((hero) => hero.key === 'earthshaker').slots[0].options;
 
-  assert.equal(options.length, 1);
-  assert.deepEqual(options.map((option) => option.styleId), ['0']);
-  assert.deepEqual(options.map((option) => option.name), ['Planetfall']);
+  assert.equal(options.length, 2);
+  assert.deepEqual(options.map((option) => option.styleId), ['0', '1']);
+  assert.deepEqual(options.map((option) => option.name), ['Planetfall', 'Planetfall · Style 1']);
   const secondStylePick = sanitizeCosmeticSelections(describeItems(planetfallSchema), {
     'item:earthshaker:weapon': { itemId: '20', styleId: '1' },
   });
-  assert.deepEqual(secondStylePick.selections, {});
+  assert.deepEqual(secondStylePick.selections, { 'item:earthshaker:weapon': { itemId: '20', styleId: '1' } });
+  assert.deepEqual(secondStylePick.discarded, []);
 
   const styleZero = buildCosmeticReplacements(planetfallSchema, { 'item:earthshaker:weapon': { itemId: '20', styleId: 0 } }).get('10');
   assert.match(styleZero.content, /"model_player"\s+"models\/items\/earthshaker\/planetfall\.vmdl"/);
@@ -181,7 +339,7 @@ test('does not expose schema styles for Almond the Frondillo', () => {
   assert.equal(options[0].styleId, undefined);
 });
 
-test('localizes arcana and style names, exposes all three Tidehunter styles, and includes Infused items', () => {
+test('localizes arcana and style names, exposes every Tidehunter style, and includes Infused items', () => {
   const styleSchema = `"items_game" { "prefabs" { "default_item" { "item_slot" "weapon" } "wearable" { "item_slot" "weapon" } } "items" {
     "1" { "name" "Tidehunter Default Weapon" "prefab" "default_item" "used_by_heroes" { "npc_dota_hero_tidehunter" "1" } }
     "2" { "name" "#DOTA_Tidehunter_Arcana" "prefab" "wearable" "item_quality" "arcana" "item_slot" "weapon" "used_by_heroes" { "npc_dota_hero_tidehunter" "1" } "image_inventory" "econ/items/tidehunter/arcana" "visuals" { "styles" { "1" { "name" "#TIDE_STYLE_ONE" "skin" "1" } "2" { "name" "#TIDE_STYLE_TWO" "skin" "2" } "3" { "name" "#TIDE_STYLE_THREE" "skin" "3" } } } }
@@ -192,9 +350,10 @@ test('localizes arcana and style names, exposes all three Tidehunter styles, and
   const heroes = describeItems(styleSchema, { localization });
   const tideArcana = heroes.find((hero) => hero.key === 'tidehunter').slots[0].options;
   const styles = tideArcana.filter((option) => option.styleId);
-  assert.deepEqual(styles.map((option) => option.styleId), ['1', '3']);
+  assert.deepEqual(styles.map((option) => option.styleId), ['1', '2', '3']);
   assert.deepEqual(styles.map((option) => option.name), [
     'Tidehunter Arcana · Style One',
+    'Tidehunter Arcana · Style Two',
     'Tidehunter Arcana · Style Three',
   ]);
   assert.ok(styles.every((option) => !option.name.includes('#DOTA')));
@@ -206,9 +365,9 @@ test('localizes arcana and style names, exposes all three Tidehunter styles, and
 
   const replacement = buildCosmeticReplacements(styleSchema, { 'item:tidehunter:weapon': { itemId: '2', styleId: '2' } }).get('1');
   assert.match(replacement.content, /"skin"\s+"2"/);
-  const hiddenSecondStyle = sanitizeCosmeticSelections(heroes, { 'item:tidehunter:weapon': { itemId: '2', styleId: '2' } });
-  assert.deepEqual(hiddenSecondStyle.selections, {});
-  assert.deepEqual(hiddenSecondStyle.discarded, [{ slotId: 'item:tidehunter:weapon', itemId: '2' }]);
+  const secondStyle = sanitizeCosmeticSelections(heroes, { 'item:tidehunter:weapon': { itemId: '2', styleId: '2' } });
+  assert.deepEqual(secondStyle.selections, { 'item:tidehunter:weapon': { itemId: '2', styleId: '2' } });
+  assert.deepEqual(secondStyle.discarded, []);
 });
 
 test('loads localized item labels from the selected language files inside the game VPK', async () => {
@@ -314,6 +473,26 @@ test('sanitizes style picks and rejects a style ID not present on the selected w
   assert.deepEqual(stale.discarded, [{ slotId: 'item:axe:weapon', itemId: '20' }]);
 });
 
+test('removes unsupported Mars pet slots while keeping the hero skin selections', () => {
+  const marsSchema = `"items_game" { "prefabs" { "default_item" { "item_slot" "weapon" } "wearable" { "item_slot" "weapon" } } "items" {
+    "10" { "name" "Mars Default Spear" "prefab" "default_item" "used_by_heroes" { "npc_dota_hero_mars" "1" } }
+    "11" { "name" "Mars Spear" "prefab" "wearable" "used_by_heroes" { "npc_dota_hero_mars" "1" } "model_player" "models/items/mars/spear.vmdl" }
+    "20" { "name" "Mars Default Pet" "prefab" "default_item" "item_slot" "pet" "used_by_heroes" { "npc_dota_hero_mars" "1" } }
+    "21" { "name" "Mars Pet" "prefab" "wearable" "item_slot" "pet" "used_by_heroes" { "npc_dota_hero_mars" "1" } "model_player" "models/items/mars/pet.vmdl" }
+  } }`;
+  const heroes = describeItems(marsSchema);
+  const mars = heroes.find((hero) => hero.key === 'mars');
+  const sanitized = sanitizeCosmeticSelections(heroes, {
+    'item:mars:weapon': '11',
+    'item:mars:pet': '21',
+  });
+
+  assert.deepEqual(mars.slots.map((slot) => slot.id), ['item:mars:weapon']);
+  assert.deepEqual(sanitized.selections, { 'item:mars:weapon': '11' });
+  assert.deepEqual(sanitized.discarded, [{ slotId: 'item:mars:pet', itemId: '21' }]);
+  assert.throws(() => buildCosmeticReplacements(marsSchema, { 'item:mars:pet': '21' }), /Mars does not support/i);
+});
+
 test('collapses hero cosmetic picks that share one default-item target before building the patch', () => {
   const sharedSlotSchema = `"items_game" { "prefabs" { "default_item" { "item_slot" "courier" } "wearable" { "item_slot" "courier" } } "items" {
     "1" { "name" "All Heroes' Default Pet" "prefab" "default_item" "used_by_heroes" { "npc_dota_hero_axe" "1" "npc_dota_hero_pudge" "1" } }
@@ -391,6 +570,22 @@ test('applying a new slot keeps the previously saved effect on another slot', as
     'item:axe:weapon': { itemId: '20', styleId: '2' },
   });
   assert.equal(service.storage.state.settings.cosmeticLoadout['item:axe:shoulders'].effectId, 'fire');
+});
+
+test('a non-empty cosmetic request with no valid schema entries cannot erase the saved loadout', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-cosmetic-empty-valid-picks-'));
+  const service = new AppService({ rootDir: root });
+  await service.storage.init();
+  const savedLoadout = { 'item:axe:weapon': '20', 'item:mars:weapon': '11' };
+  await service.storage.patch({ settings: { ...service.storage.state.settings, cosmeticLoadout: savedLoadout } });
+  service.getCosmeticListing = async () => ({ heroes: [], error: null });
+  let applied = false;
+  service.specialPatches.applyCosmetics = async () => { applied = true; };
+
+  await assert.rejects(service.applyCosmetics({ 'item:mars:pet': '21' }), /saved loadout was left unchanged/i);
+
+  assert.equal(applied, false);
+  assert.deepEqual(service.storage.state.settings.cosmeticLoadout, savedLoadout);
 });
 
 test('builds the generated skin schema into a local VPK without network access', async () => {

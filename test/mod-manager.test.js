@@ -216,6 +216,72 @@ test('listMods filters hero records and recognizes installed arrays and objects'
   assert.deepEqual(installedEarthshakerMods.mods.map((mod) => mod.id), ['earthshaker-totem']);
 });
 
+test('ordinary catalog searches skip filesystem-heavy library refreshes', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-list-mods-fast-search-'));
+  const service = new AppService({ rootDir: root });
+  await service.storage.init();
+  service.getAvailableMods = () => [{ id: 'orange-theme', name: 'Orange theme', categoryId: 'themes' }];
+  service.getLibrary = async () => { throw new Error('search should not rescan the Dota library'); };
+
+  const result = await service.listMods({ query: 'orange' });
+
+  assert.deepEqual(result.mods.map((mod) => mod.id), ['orange-theme']);
+  assert.equal(result.mods[0].name, 'Orange theme');
+});
+
+test('generated global cosmetics are section-scoped catalog cards with persisted selection state', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-global-cosmetic-cards-'));
+  const service = new AppService({ rootDir: root });
+  await service.storage.init();
+  service.gamePath = path.join(root, 'game');
+  service.getCosmeticListing = async () => ({ heroes: [], globalSlots: [
+    { id: 'music', targetId: '588', name: 'Music', categoryId: 'music', options: [{ itemId: '100', name: 'Aurora Music', previewUrl: 'https://media.test/aurora.webp', previewFallbackUrl: 'https://steam.test/aurora.png' }] },
+    { id: 'weather', targetId: '555', name: 'Weather', categoryId: 'weather', options: [{ itemId: '200', name: 'Snow Weather', previewUrl: null }] },
+    { id: 'radianttowers', targetId: '677', name: 'Radiant Towers', categoryId: 'towers', options: [{ itemId: '300', name: 'Forest Towers', previewUrl: null }] },
+  ], error: null });
+  service.specialPatches.applyGlobalCosmetics = async (selections) => {
+    await service.storage.patch({ settings: { ...service.storage.state.settings, schemaCosmeticLoadout: selections } });
+    return { applied: Object.keys(selections).length };
+  };
+  const savedHeroSkins = { 'item:axe:weapon': '20' };
+  await service.storage.patch({ settings: { ...service.storage.state.settings, cosmeticLoadout: savedHeroSkins } });
+
+  const interfaceResults = await service.listMods({ includeGeneratedCosmetics: true, category: 'music' });
+  const worldResults = await service.listMods({ includeGeneratedCosmetics: true, category: 'weather' });
+
+  assert.deepEqual(interfaceResults.mods.map((mod) => mod.name), ['Aurora Music']);
+  assert.equal(interfaceResults.mods[0].targetItemId, '588');
+  assert.equal(interfaceResults.mods[0].previewFallbackUrl, 'https://steam.test/aurora.png');
+  assert.equal(Object.hasOwn(interfaceResults.mods[0], 'author'), false);
+  assert.deepEqual(worldResults.mods.map((mod) => mod.name), ['Snow Weather']);
+  assert.equal((await service.setGlobalCosmetic({ slot: 'music', itemId: '100' })).cosmetics.globalPicks.music, '100');
+  assert.deepEqual(service.storage.state.settings.cosmeticLoadout, savedHeroSkins);
+  const selected = await service.listMods({ includeGeneratedCosmetics: true, category: 'music' });
+  assert.equal(selected.mods[0].globalSelected, true);
+  const otherWorldOptions = await service.listMods({ includeGeneratedCosmetics: true, category: 'weather' });
+  assert.deepEqual(otherWorldOptions.mods.map((mod) => mod.name), ['Snow Weather']);
+  await service.setGlobalCosmetic({ slot: 'music', itemId: null });
+  assert.deepEqual(service.storage.state.settings.schemaCosmeticLoadout, {});
+});
+
+test('global cosmetics bulk apply validates against the installed schema before changing the loadout', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-global-cosmetic-bulk-'));
+  const service = new AppService({ rootDir: root });
+  await service.storage.init();
+  service.getCosmeticListing = async () => ({ error: null, heroes: [], globalSlots: [
+    { id: 'weather', targetId: '555', categoryId: 'weather', options: [{ itemId: '10704', name: 'Snow' }] },
+  ] });
+  service.specialPatches.applyGlobalCosmetics = async (picks) => {
+    await service.storage.patch({ settings: { ...service.storage.state.settings, schemaCosmeticLoadout: picks } });
+    return { applied: Object.keys(picks).length };
+  };
+
+  await service.applyGlobalCosmetics({ weather: '10704' });
+  assert.deepEqual(service.storage.state.settings.schemaCosmeticLoadout, { weather: '10704' });
+  await assert.rejects(service.applyGlobalCosmetics({ weather: 'not-in-schema' }), /current Dota schema/);
+  assert.deepEqual(service.storage.state.settings.schemaCosmeticLoadout, { weather: '10704' });
+});
+
 test('legacy installed records without targetRoot are excluded from external file detection', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-library-owned-path-'));
   const gamePath = path.join(root, 'game');

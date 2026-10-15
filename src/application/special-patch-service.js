@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { VpkReader, VpkWriter } = require('vpk-tools');
-const { buildCosmeticReplacements } = require('./cosmetic-builder');
+const { buildCosmeticReplacements, buildGlobalCosmeticReplacements } = require('./cosmetic-builder');
 
 const execFileAsync = promisify(execFile);
 const PATCH_MARKER = 'Patched by DotaModdingCommunity Patcher';
@@ -571,7 +571,7 @@ class SpecialPatchService {
     return item;
   }
 
-  async createPatchedVpk(pak01Path, definitions, tempPath, cosmeticSelections = {}) {
+  async createPatchedVpk(pak01Path, definitions, tempPath, cosmeticSelections = {}, globalSelections = {}) {
     const base = await this.getBaseItemsGame(pak01Path);
     const replacements = new Map();
     for (const { file, item } of definitions) {
@@ -580,6 +580,11 @@ class SpecialPatchService {
     }
     let patchedItemsGame = replaceItemEntries(base.text, replacements);
     const cosmetics = buildCosmeticReplacements(patchedItemsGame, cosmeticSelections);
+    const globalCosmetics = buildGlobalCosmeticReplacements(patchedItemsGame, globalSelections);
+    for (const itemId of globalCosmetics.keys()) {
+      if (cosmetics.has(itemId)) throw new Error(`More than one selected cosmetic changes Dota item ${itemId}.`);
+      cosmetics.set(itemId, globalCosmetics.get(itemId));
+    }
     if (cosmetics.size) patchedItemsGame = replaceItemEntries(patchedItemsGame, cosmetics);
     const writer = new VpkWriter();
     writer.addFile('scripts/items/items_game.txt', Buffer.from(patchedItemsGame, 'utf8'));
@@ -776,29 +781,57 @@ class SpecialPatchService {
   }
 
   async applyCosmetics(selections) {
-    const previous = this.storage.state.settings.cosmeticLoadout || {};
     const next = selections && typeof selections === 'object' && !Array.isArray(selections) ? selections : {};
-    if (!Object.keys(next).length) {
-      if (this.storage.state.installedMods?.[LOCAL_COSMETICS_ID]) return this.remove(LOCAL_COSMETICS_ID);
-      const activePatch = Object.values(this.storage.state.installedMods || {})
-        .filter((record) => record?.modType === 'special_patch')
-        .map((record) => this.getMods().find((mod) => mod.id === record.id))
-        .find(Boolean);
-      await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: {} } });
-      if (activePatch) {
-        try { return await this.apply(activePatch); }
-        catch (error) {
-          await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: previous } });
-          throw error;
-        }
-      }
+    return this.rebuildGeneratedCosmetics({ cosmeticLoadout: next });
+  }
+
+  async applyGlobalCosmetics(selections) {
+    const next = selections && typeof selections === 'object' && !Array.isArray(selections) ? selections : {};
+    return this.rebuildGeneratedCosmetics({ schemaCosmeticLoadout: next });
+  }
+
+  async applyCosmeticLoadout(cosmeticLoadout, schemaCosmeticLoadout) {
+    const heroes = cosmeticLoadout && typeof cosmeticLoadout === 'object' && !Array.isArray(cosmeticLoadout) ? cosmeticLoadout : {};
+    const globals = schemaCosmeticLoadout && typeof schemaCosmeticLoadout === 'object' && !Array.isArray(schemaCosmeticLoadout) ? schemaCosmeticLoadout : {};
+    return this.rebuildGeneratedCosmetics({ cosmeticLoadout: heroes, schemaCosmeticLoadout: globals });
+  }
+
+  async rebuildGeneratedCosmetics(settingsChanges = {}) {
+    const previousSettings = { ...this.storage.state.settings };
+    const installedBefore = { ...(this.storage.state.installedMods || {}) };
+    const nextSettings = { ...previousSettings, ...settingsChanges };
+    const hasSelections = Object.keys(nextSettings.cosmeticLoadout || {}).length > 0
+      || Object.keys(nextSettings.schemaCosmeticLoadout || {}).length > 0;
+    const legacyEnvironmentIds = Object.entries(installedBefore)
+      .filter(([, record]) => record?.modType === 'special_patch' && ['weather', 'tower'].includes(record.specialType))
+      .map(([id]) => id);
+    const withoutLegacyEnvironment = Object.fromEntries(
+      Object.entries(installedBefore).filter(([id]) => !legacyEnvironmentIds.includes(id)),
+    );
+
+    if (!hasSelections && !installedBefore[LOCAL_COSMETICS_ID] && !legacyEnvironmentIds.length) {
+      await this.storage.patch({ settings: nextSettings });
       return { applied: 0, installed: false };
     }
-    await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: next } });
+
+    // Legacy Weather/Tower records came from remote definitions. Retire them before any
+    // generated rebuild/removal so an unrelated loadout change never refetches stale scripts.
+    this.storage.state.installedMods = withoutLegacyEnvironment;
+    this.storage.state.settings = nextSettings;
     try {
+      if (!hasSelections) {
+        if (withoutLegacyEnvironment[LOCAL_COSMETICS_ID]) return await this.remove(LOCAL_COSMETICS_ID);
+        if (legacyEnvironmentIds.length) {
+          const firstLegacyId = legacyEnvironmentIds[0];
+          this.storage.state.installedMods = { ...withoutLegacyEnvironment, [firstLegacyId]: installedBefore[firstLegacyId] };
+          return await this.remove(firstLegacyId);
+        }
+        await this.storage.patch({ settings: nextSettings, installedMods: withoutLegacyEnvironment });
+        return { applied: 0, installed: false };
+      }
       return await this.apply(localCosmeticsMod());
     } catch (error) {
-      await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: previous } });
+      await this.storage.patch({ settings: previousSettings, installedMods: installedBefore });
       throw error;
     }
   }
@@ -811,7 +844,10 @@ class SpecialPatchService {
         if (!(await this.exists(filePath))) throw new Error(`The selected Dota 2 folder is missing its ${label}: ${filePath}. Re-detect the game path and verify Dota 2 files in Steam before installing Weather/Tower patches.`);
       }
       const signaturesPath = await this.findSignaturesPath(paths);
-      const installed = Object.values(this.storage.state.installedMods || {}).filter((record) => record?.modType === 'special_patch');
+      const installed = Object.values(this.storage.state.installedMods || {}).filter((record) =>
+        record?.modType === 'special_patch'
+        && !(mod.specialType === 'cosmetics' && ['weather', 'tower'].includes(record.specialType)),
+      );
       const catalogMods = this.getMods();
       const installedCatalogMods = installed.map((record) => record.id === LOCAL_COSMETICS_ID
         ? localCosmeticsMod()
@@ -841,7 +877,13 @@ class SpecialPatchService {
       let previousInstalledMods = null;
       try {
         this.progress(mod.id, 'Reading current Dota item data…', 25);
-        const outputMetadata = await this.createPatchedVpk(paths.pak01, definitionFiles, temporaryVpk, this.storage.state.settings.cosmeticLoadout || {});
+        const outputMetadata = await this.createPatchedVpk(
+          paths.pak01,
+          definitionFiles,
+          temporaryVpk,
+          this.storage.state.settings.cosmeticLoadout || {},
+          this.storage.state.settings.schemaCosmeticLoadout || {},
+        );
         this.progress(mod.id, 'Preparing the client patch…', 60);
         const gameinfoBefore = await fs.readFile(paths.gameinfo);
         const signaturesBefore = await fs.readFile(signaturesPath);
@@ -1047,6 +1089,7 @@ class SpecialPatchService {
         ? localCosmeticsMod()
         : catalogMods.find((candidate) => candidate.id === item.id)).filter(Boolean);
       const previousCosmeticLoadout = this.storage.state.settings.cosmeticLoadout || {};
+      const previousSchemaCosmeticLoadout = this.storage.state.settings.schemaCosmeticLoadout || {};
       let removeAllSpecialPatches = false;
       if (remaining.length) {
         try { await this.findSignaturesPath(this.getDotaPaths()); }
@@ -1057,11 +1100,11 @@ class SpecialPatchService {
           const staged = { ...before };
           delete staged[id];
           this.storage.state.installedMods = staged;
-          if (id === LOCAL_COSMETICS_ID) await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: {} } });
+          if (id === LOCAL_COSMETICS_ID) await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: {}, schemaCosmeticLoadout: {} } });
           try { await this.applyLocked(first, { replacingId: first.id }); }
           catch (error) {
             this.storage.state.installedMods = before;
-            if (id === LOCAL_COSMETICS_ID) await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: previousCosmeticLoadout } });
+            if (id === LOCAL_COSMETICS_ID) await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: previousCosmeticLoadout, schemaCosmeticLoadout: previousSchemaCosmeticLoadout } });
             throw error;
           }
           return true;
@@ -1182,7 +1225,7 @@ class SpecialPatchService {
         } else delete installedMods[id];
         await this.storage.patch({ installedMods });
         if (id === LOCAL_COSMETICS_ID || removeAllSpecialPatches) {
-          await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: {} } });
+          await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: {}, schemaCosmeticLoadout: {} } });
         }
         await fs.rm(this.manifestPath, { force: true });
         await fs.rm(this.journalPath, { force: true });
@@ -1190,7 +1233,7 @@ class SpecialPatchService {
         const journal = JSON.parse(await fs.readFile(this.journalPath, 'utf8'));
         await this.rollbackTransaction(journal);
         await fs.rm(this.journalPath, { force: true });
-        if (id === LOCAL_COSMETICS_ID) await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: previousCosmeticLoadout } });
+        if (id === LOCAL_COSMETICS_ID) await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: previousCosmeticLoadout, schemaCosmeticLoadout: previousSchemaCosmeticLoadout } });
         throw error;
       }
       return true;

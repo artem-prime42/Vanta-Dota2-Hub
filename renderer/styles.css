@@ -74,15 +74,3 @@
 }
 .folder-nav-item { color: var(--muted); background: transparent; }
 .folder-nav-item:hover, .folder-nav-item:focus-visible { color: var(--text); background: var(--panel-2); }
-.coming-soon-dialog { width: min(420px, calc(100vw - 32px)); }
-.coming-soon-form { align-items: center; gap: 11px; padding: 30px 28px 22px; text-align: center; }
-.coming-soon-icon { display: grid; place-items: center; width: 54px; height: 54px; margin-bottom: 3px; border: 1px solid color-mix(in srgb, var(--theme-accent, var(--accent)) 45%, transparent); border-radius: 17px; color: var(--theme-accent, var(--accent)); background: color-mix(in srgb, var(--theme-accent, var(--accent)) 10%, transparent); font-size: 25px; animation: coming-soon-glow 2.4s ease-in-out infinite; }
-.coming-soon-kicker { margin: 0; color: var(--muted); }
-.coming-soon-form h2 { margin: 0; font: 600 24px 'Space Grotesk'; }
-.coming-soon-message { max-width: 330px; }
-.coming-soon-actions { width: 100%; justify-content: center; margin-top: 8px; }
-.coming-soon-ok { min-width: 112px; transition: transform .18s ease, filter .18s ease; }
-.coming-soon-ok:hover { transform: translateY(-1px); filter: brightness(1.08); }
-.coming-soon-ok:focus-visible { outline: 2px solid var(--theme-focus, var(--accent)); outline-offset: 3px; }
-@keyframes coming-soon-glow { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--theme-accent, var(--accent)) 0%, transparent); transform: translateY(0); } 50% { box-shadow: 0 0 26px 2px color-mix(in srgb, var(--theme-accent, var(--accent)) 16%, transparent); transform: translateY(-2px); } }
-@media (prefers-reduced-motion: reduce) { .coming-soon-icon, .coming-soon-ok { animation: none; transition: none; } }

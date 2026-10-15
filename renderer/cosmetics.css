@@ -67,7 +67,8 @@
 .cosmetic-skin-card:hover .skin-card-image img { transform: scale(1.045); }
 .skin-card-image-fallback { display: none; color: rgba(255,255,255,.58); font-size: 54px; font-weight: 700; text-shadow: 0 4px 24px rgba(0,0,0,.6); }
 .skin-card-image.no-image .skin-card-image-fallback { display: block; }
-.skin-card-quality { position: absolute; top: 9px; left: 9px; padding: 4px 8px; border: 1px solid currentColor; border-radius: 20px; background: rgba(10,12,15,.82); font-size: 10px; font-weight: 750; letter-spacing: .04em; text-shadow: 0 1px 5px #000; backdrop-filter: blur(8px); }
+.skin-card-quality { position: absolute; top: 9px; left: 9px; padding: 4px 8px; border: 1px solid currentColor; border-radius: 20px; background: rgba(10,12,15,.82); font-size: 10px; font-weight: 750; letter-spacing: .04em; text-shadow: 0 1px 5px #000; backdrop-filter: blur(8px); opacity: 0; transform: translateY(-4px); transition: opacity .16s ease, transform .16s ease; pointer-events: none; }
+.cosmetic-skin-card:hover .skin-card-quality, .cosmetic-skin-card:focus-within .skin-card-quality { opacity: 1; transform: translateY(0); }
 .skin-card-quality.rarity-arcana { color: #ade55c; }
 .skin-card-quality.rarity-immortal, .skin-card-quality.rarity-immortal-treasure { color: #e4ae39; }
 .skin-card-quality.rarity-infused { color: #39d98a; border-color: #39d98a99; box-shadow: 0 0 16px #39d98a44; }

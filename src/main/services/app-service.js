@@ -18,7 +18,7 @@ const { HeroGridService } = require('../../infrastructure/hero-grid-service');
 const { ThemeManager, SEMANTIC_THEME_TOKENS } = require('../../infrastructure/theme-manager');
 const { R2Provider } = require('../../infrastructure/r2-provider');
 const { migrateLegacyUserData } = require('../../infrastructure/user-data-migration');
-const { sanitizeCosmeticSelections } = require('../../application/cosmetic-builder');
+const { sanitizeCosmeticSelections, sanitizeGlobalCosmeticSelections } = require('../../application/cosmetic-builder');
 const { normalizeHeroKey } = require('../../core/models');
 
 const DISCORD_APP_ID = '1551207182744166511';
@@ -140,6 +140,10 @@ class AppService {
     return [...SPECIAL_PATCH_CATALOG, ...local];
   }
 
+  getBrowseableMods() {
+    return this.getAvailableMods().filter((mod) => !(mod.modType === 'special_patch' && ['weather', 'tower'].includes(mod.specialType)));
+  }
+
   getAvailableMod(id) {
     return SPECIAL_PATCH_CATALOG.find((mod) => mod.id === id) || this.library.get(id);
   }
@@ -152,7 +156,7 @@ class AppService {
         if (runtime.status === 'updating') installed[id] = { ...record, specialPatchState: runtime.status, requiresPatchUpdate: true };
       }
     }
-    return { mods: this.getAvailableMods(), installed, packMembership: this.getPackMembership(), favorites: this.storage.state.favorites, settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId(), discordAppId: DISCORD_APP_ID }, themes: this.themeManager.getThemes(), themeTokens: [...SEMANTIC_THEME_TOKENS], themeTemplate: this.themeManager.getThemeTemplate(), gamePath: this.gamePath, authors: this.getAuthors(), r2: this.r2.getStatus(), appVersion: this.appVersion || null };
+    return { mods: this.getBrowseableMods(), installed, packMembership: this.getPackMembership(), favorites: this.storage.state.favorites, settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId(), discordAppId: DISCORD_APP_ID }, themes: this.themeManager.getThemes(), themeTokens: [...SEMANTIC_THEME_TOKENS], themeTemplate: this.themeManager.getThemeTemplate(), gamePath: this.gamePath, authors: this.getAuthors(), r2: this.r2.getStatus(), appVersion: this.appVersion || null };
   }
 
   getAuthors() {
@@ -220,13 +224,13 @@ class AppService {
   async removeHeroGridUserGrids() { return this.heroGrids.removeUserGrids(); }
   async removeHeroGridUserGrid(index) { return this.heroGrids.removeUserGrid(index); }
   async getCosmeticListing({ forceRefresh = false } = {}) {
-    if (!this.gamePath) return { heroes: [], error: 'Configure the Dota 2 path first.' };
+    if (!this.gamePath) return { heroes: [], globalSlots: [], error: 'Configure the Dota 2 path first.' };
     const pakPath = path.join(this.gamePath, 'dota', 'pak01_dir.vpk');
     let stat;
     try { stat = await fs.stat(pakPath); }
-    catch (error) { return { heroes: [], error: `Could not read the local Dota VPK: ${error.message}` }; }
+    catch (error) { return { heroes: [], globalSlots: [], error: `Could not read the local Dota VPK: ${error.message}` }; }
     const language = normalizeLanguageSuffix(this.storage.state.settings.langSuffix || 'english', 'english');
-    const signature = `${path.resolve(this.gamePath)}|${stat.size}|${stat.mtimeMs}|cosmetics-v9|${language}|${this.appVersion || 'dev'}`;
+    const signature = `${path.resolve(this.gamePath)}|${stat.size}|${stat.mtimeMs}|cosmetics-v16|${language}|${this.appVersion || 'dev'}`;
     if (!forceRefresh && this.cosmeticListingCache?.signature === signature) return this.cosmeticListingCache.listing;
     if (!forceRefresh) {
       try {
@@ -251,25 +255,64 @@ class AppService {
   async getCosmetics() {
     const listing = await this.getCosmeticListing();
     const { selections: picks, discarded } = sanitizeCosmeticSelections(listing.heroes, this.storage.state.settings.cosmeticLoadout || {});
+    const { selections: globalPicks, discarded: discardedGlobalPicks } = sanitizeGlobalCosmeticSelections(listing.globalSlots, this.storage.state.settings.schemaCosmeticLoadout || {});
     const manifest = await this.specialPatches.readSpecialManifest().catch(() => null);
+    const installedMods = this.storage.state.installedMods || {};
     return {
       ...listing,
       picks,
       discardedPicks: discarded,
+      globalPicks,
+      discardedGlobalPicks,
       loaderInstalled: Boolean(manifest && this.gamePath && path.resolve(manifest.gamePath) === path.resolve(this.gamePath)),
-      generatedModInstalled: Boolean(this.storage.state.installedMods?.['vanta-generated-cosmetics']),
+      generatedModInstalled: Boolean(installedMods['vanta-generated-cosmetics']),
     };
   }
   async applyCosmetics(picks) {
     const listing = await this.getCosmeticListing({ forceRefresh: true });
     if (listing.error && Object.keys(picks || {}).length) throw new Error(listing.error);
     const sanitized = sanitizeCosmeticSelections(listing.heroes, picks);
+    if (Object.keys(picks || {}).length && !Object.keys(sanitized.selections).length) {
+      throw new Error(this.storage.state.settings.appLanguage === 'ru'
+        ? 'Выбранные предметы не найдены в текущей схеме Dota 2. Сохранённый образ не изменён.'
+        : 'None of the selected cosmetics exist in the current Dota schema. The saved loadout was left unchanged.');
+    }
     const stored = sanitizeCosmeticSelections(listing.heroes, this.storage.state.settings.cosmeticLoadout || {});
     const discardedPicks = Object.keys(picks || {}).length
       ? [...stored.discarded, ...sanitized.discarded]
       : sanitized.discarded;
     const operation = await this.specialPatches.applyCosmetics(sanitized.selections);
     return { ...(await this.getCosmetics()), operation, discardedPicks };
+  }
+  async setGlobalCosmetic({ slot, itemId } = {}) {
+    const listing = await this.getCosmeticListing({ forceRefresh: true });
+    if (listing.error) throw new Error(listing.error);
+    const { selections } = sanitizeGlobalCosmeticSelections(listing.globalSlots, this.storage.state.settings.schemaCosmeticLoadout || {});
+    const slotId = String(slot || '');
+    const globalSlot = listing.globalSlots?.find((entry) => entry.id === slotId);
+    if (!globalSlot) throw new Error('The selected global cosmetic slot is not available in the installed Dota schema.');
+    const next = { ...selections };
+    if (itemId === null || itemId === undefined || itemId === '') delete next[slotId];
+    else {
+      const selectedId = String(itemId);
+      const option = globalSlot.options.find((item) => String(item.itemId) === selectedId);
+      if (!option) throw new Error('The selected cosmetic is not available in this Dota slot.');
+      next[slotId] = option.styleId ? { itemId: selectedId, styleId: option.styleId } : selectedId;
+    }
+    const operation = await this.specialPatches.applyGlobalCosmetics(next);
+    return { ...this.snapshot(), cosmetics: await this.getCosmetics(), operation };
+  }
+  async applyGlobalCosmetics(picks = {}) {
+    const listing = await this.getCosmeticListing({ forceRefresh: true });
+    if (listing.error && Object.keys(picks || {}).length) throw new Error(listing.error);
+    const sanitized = sanitizeGlobalCosmeticSelections(listing.globalSlots, picks);
+    if (Object.keys(picks || {}).length && !Object.keys(sanitized.selections).length) {
+      throw new Error(this.storage.state.settings.appLanguage === 'ru'
+        ? 'Выбранные предметы не найдены в текущей схеме Dota 2. Сохранённый образ не изменён.'
+        : 'None of the selected global cosmetics exist in the current Dota schema. The saved loadout was left unchanged.');
+    }
+    const operation = await this.specialPatches.applyGlobalCosmetics(sanitized.selections);
+    return { ...this.snapshot(), cosmetics: await this.getCosmetics(), operation, discardedGlobalPicks: sanitized.discarded };
   }
   getCosmeticPresets() {
     const presets = this.storage.state.settings.skinLoadoutPresets;
@@ -283,15 +326,24 @@ class AppService {
     const listing = await this.getCosmeticListing();
     if (listing.error) throw new Error(listing.error);
     const { selections, discarded } = sanitizeCosmeticSelections(listing.heroes, this.storage.state.settings.cosmeticLoadout || {});
-    if (!Object.keys(selections).length) throw new Error('Choose and apply at least one skin before saving a set.');
-    const preset = { id: crypto.randomUUID(), name: safeName, picks: selections, skinCount: Object.keys(selections).length, createdAt: new Date().toISOString() };
+    const { selections: globalPicks, discarded: discardedGlobalPicks } = sanitizeGlobalCosmeticSelections(listing.globalSlots, this.storage.state.settings.schemaCosmeticLoadout || {});
+    if (!Object.keys(selections).length && !Object.keys(globalPicks).length) throw new Error('Choose and apply at least one skin before saving a set.');
+    const preset = { id: crypto.randomUUID(), name: safeName, picks: selections, globalPicks, skinCount: Object.keys(selections).length + Object.keys(globalPicks).length, createdAt: new Date().toISOString() };
     await this.storage.patch({ settings: { ...this.storage.state.settings, skinLoadoutPresets: [...presets, preset] } });
-    return { presets: this.getCosmeticPresets(), discardedPicks: discarded };
+    return { presets: this.getCosmeticPresets(), discardedPicks: discarded, discardedGlobalPicks };
   }
   async applyCosmeticPreset(id) {
     const preset = this.getCosmeticPresets().find((item) => item.id === id);
     if (!preset) throw new Error('Saved skin set was not found.');
-    return this.applyCosmetics(preset.picks);
+    const listing = await this.getCosmeticListing({ forceRefresh: true });
+    const presetGlobalPicks = Object.hasOwn(preset, 'globalPicks')
+      ? preset.globalPicks
+      : this.storage.state.settings.schemaCosmeticLoadout || {};
+    if (listing.error && (Object.keys(preset.picks || {}).length || Object.keys(presetGlobalPicks || {}).length)) throw new Error(listing.error);
+    const hero = sanitizeCosmeticSelections(listing.heroes, preset.picks || {});
+    const global = sanitizeGlobalCosmeticSelections(listing.globalSlots, presetGlobalPicks || {});
+    const operation = await this.specialPatches.applyCosmeticLoadout(hero.selections, global.selections);
+    return { ...(await this.getCosmetics()), operation, discardedPicks: hero.discarded, discardedGlobalPicks: global.discarded };
   }
   async deleteCosmeticPreset(id) {
     const presets = this.getCosmeticPresets();
@@ -305,11 +357,16 @@ class AppService {
     const preset = presets.find((item) => item.id === id);
     if (!preset) throw new Error('Saved skin set was not found.');
     const safeSlotId = String(slotId || '');
-    if (!safeSlotId.startsWith('item:') || !Object.hasOwn(preset.picks, safeSlotId)) throw new Error('The selected skin is not in this saved set.');
+    const isGlobal = safeSlotId.startsWith('global:');
+    const pickKey = isGlobal ? safeSlotId.slice('global:'.length) : safeSlotId;
+    const pickCollection = isGlobal ? (preset.globalPicks || {}) : preset.picks;
+    if ((!isGlobal && !safeSlotId.startsWith('item:')) || !Object.hasOwn(pickCollection, pickKey)) throw new Error('The selected skin is not in this saved set.');
     const nextPicks = { ...preset.picks };
-    delete nextPicks[safeSlotId];
+    const nextGlobalPicks = { ...(preset.globalPicks || {}) };
+    if (isGlobal) delete nextGlobalPicks[pickKey];
+    else delete nextPicks[pickKey];
     const updatedPresets = presets.map((item) => item.id === id
-      ? { ...item, picks: nextPicks, skinCount: Object.keys(nextPicks).length, updatedAt: new Date().toISOString() }
+      ? { ...item, picks: nextPicks, globalPicks: nextGlobalPicks, skinCount: Object.keys(nextPicks).length + Object.keys(nextGlobalPicks).length, updatedAt: new Date().toISOString() }
       : item);
     await this.storage.patch({ settings: { ...this.storage.state.settings, skinLoadoutPresets: updatedPresets } });
     return { presets: this.getCosmeticPresets(), preset: this.getCosmeticPresets().find((item) => item.id === id) };
@@ -334,7 +391,8 @@ class AppService {
     const tasks = [
       ...records.map((record) => ({ record, kind: 'vpk' })),
     ];
-    const hasSavedCosmetics = Object.keys(this.storage.state.settings.cosmeticLoadout || {}).length > 0;
+    const hasSavedCosmetics = Object.keys(this.storage.state.settings.cosmeticLoadout || {}).length > 0
+      || Object.keys(this.storage.state.settings.schemaCosmeticLoadout || {}).length > 0;
     if (specialPatches.length || hasSavedCosmetics) {
       tasks.push({
         kind: 'special-refresh',
@@ -376,7 +434,8 @@ class AppService {
           if (unavailable.length) throw new Error(`Installed Dota patch is no longer available in the current VANTA catalog: ${unavailable.map((member) => member.displayName || member.name || member.id).join(', ')}`);
           const picks = this.storage.state.settings.cosmeticLoadout || {};
           const cosmetics = await this.applyCosmetics(picks);
-          const hasPicks = Object.keys(cosmetics.picks || {}).length > 0;
+          const hasPicks = Object.keys(cosmetics.picks || {}).length > 0
+            || Object.keys(cosmetics.globalPicks || {}).length > 0;
           const hasGeneratedRecord = task.members.some((member) => member.id === 'vanta-generated-cosmetics');
           const members = [...task.members];
           if (hasPicks && !hasGeneratedRecord) members.push({ id: 'vanta-generated-cosmetics', name: 'Generated Hero Cosmetics' });
@@ -523,15 +582,45 @@ class AppService {
     const cosmetics = await this.getCosmetics();
     return { ...this.snapshot(), installed, external: await detectExternalFiles(this.gamePath, mods, languageFolder, ownedFiles, legacyFiles), diagnostics: this.dotaDiagnostics.lastResult, cosmetics };
   }
-  async listMods({ query = '', category = 'all', hero = null, installedOnly = false, favoriteOnly = false } = {}) {
-    const library = await this.getLibrary();
-    const installedIds = new Set((Array.isArray(library.installed)
+  async listMods({ query = '', category = 'all', hero = null, installedOnly = false, favoriteOnly = false, includeGeneratedCosmetics = false } = {}) {
+    const library = installedOnly ? await this.getLibrary() : this.snapshot();
+    const installedIds = installedOnly ? new Set((Array.isArray(library.installed)
       ? library.installed
       : Object.entries(library.installed || {}).map(([id, record]) => ({ ...record, id: record?.id || record?.modId || id })))
       .map((record) => record?.id || record?.modId)
       .filter(Boolean)
-      .map(String));
-    const mods = searchMods(this.getAvailableMods(), query, { category, hero }).filter((mod) => {
+      .map(String)) : null;
+    const availableMods = [...(library.mods || this.getBrowseableMods())];
+    if (includeGeneratedCosmetics && this.gamePath) {
+      const listing = await this.getCosmeticListing();
+      const { selections: globalPicks } = sanitizeGlobalCosmeticSelections(listing.globalSlots, this.storage.state.settings.schemaCosmeticLoadout || {});
+      library.globalCosmeticPicks = globalPicks;
+      library.mods = availableMods;
+      for (const slot of listing.globalSlots || []) {
+        for (const option of slot.options || []) {
+          const selected = globalPicks[slot.id];
+          const selectedId = String(typeof selected === 'object' ? selected?.itemId || '' : selected || '');
+          const selectedStyle = String(typeof selected === 'object' ? selected?.styleId || '' : '');
+          availableMods.push({
+            id: `schema-${slot.id}-${option.itemId}${option.styleId ? `-${option.styleId}` : ''}`,
+            name: option.name,
+            previewUrl: option.previewUrl,
+            previewFallbackUrl: option.previewFallbackUrl,
+            categoryId: slot.categoryId,
+            description: '',
+            version: 'items_game',
+            modType: 'schema_cosmetic',
+            globalSlot: slot.id,
+            itemId: String(option.itemId),
+            targetItemId: String(slot.targetId),
+            styleId: option.styleId || '',
+            globalSelected: selectedId === String(option.itemId) && selectedStyle === String(option.styleId || ''),
+            slot: slot.name,
+          });
+        }
+      }
+    }
+    const mods = searchMods(availableMods, query, { category, hero }).filter((mod) => {
       if (installedOnly && !installedIds.has(String(mod.id))) return false;
       if (favoriteOnly && !this.storage.state.favorites.includes(mod.id)) return false;
       return true;

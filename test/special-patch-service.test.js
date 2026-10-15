@@ -574,6 +574,38 @@ test('items_game replacements are exact and reject missing base item IDs', () =>
   assert.throws(() => replaceItemEntries(base, new Map([['999', { id: '999', content: '"999" { "name" "missing" }' }]])), /does not contain required item 999/);
 });
 
+test('Weather, Towers, and hero cosmetics share one generated items_game override', async (t) => {
+  const fixture = await createFixture(t);
+  const { service, pak01, dataRoot } = fixture;
+  const combinedBase = `"items_game" { "items" {
+    "store_currency_pricepoints" { "1" "base" }
+    "555" { "name" "Original Weather" }
+    "677" { "name" "Original Radiant" }
+    "678" { "name" "Original Dire" }
+    "10" { "name" "Axe Default Weapon" "prefab" "default_item" "item_slot" "weapon" "used_by_heroes" { "npc_dota_hero_axe" "1" } }
+    "20" { "name" "Axe Frostblade" "prefab" "wearable" "item_slot" "weapon" "used_by_heroes" { "npc_dota_hero_axe" "1" } "model_player" "models/items/axe/frostblade.vmdl" }
+  } }`;
+  await writeBaseVpk(pak01, combinedBase);
+  const definitions = [
+    { file: { itemId: '555', fileName: 'Snow.txt' }, item: extractItemBlock(weatherText) },
+    { file: { itemId: '677', fileName: 'Towers_Radiant.txt' }, item: extractItemBlock(radiantText) },
+    { file: { itemId: '678', fileName: 'Towers_Dire.txt' }, item: extractItemBlock(direText) },
+  ];
+  const outputPath = path.join(dataRoot, 'combined-items-game.vpk');
+
+  await service.createPatchedVpk(pak01, definitions, outputPath, { 'item:axe:weapon': '20' });
+
+  const reader = VpkReader.open(outputPath);
+  try {
+    const output = reader.readFile('scripts/items/items_game.txt').toString('utf8');
+    assert.match(output, /Default Weather/);
+    assert.match(output, /Default Radiant Towers/);
+    assert.match(output, /Default Dire Towers/);
+    assert.match(output, /Axe Frostblade/);
+    assert.doesNotMatch(output, /Original Weather|Original Radiant|Original Dire/);
+  } finally { reader.close(); }
+});
+
 test('definition indentation matches Patcher space-to-tab normalization', () => {
   const definition = extractItemBlock('"555"\n{\n            "baseitem"\t"1"\n        "visuals"\n        {\n        }\n}\n');
   assert.equal(definition.id, '555');
@@ -813,6 +845,57 @@ test('local cosmetic loadouts generate and remove an item schema VPK transaction
   assert.equal(storage.state.installedMods['vanta-generated-cosmetics'], undefined);
   assert.equal(await fs.readFile(path.join(gamePath, 'dota', 'gameinfo_branchspecific.gi'), 'utf8'), 'FileSystem\n{\n\tSearchPaths\n\t{\n\t\tGame\t\tdota\n\t}\n}\n');
   await assert.rejects(fs.access(generatedPath), { code: 'ENOENT' });
+});
+
+test('generated hero cosmetics ignore stale legacy Weather and Tower definitions', async (t) => {
+  const fixture = await createFixture(t);
+  const { service, storage, gamePath } = fixture;
+  await writeBaseVpk(path.join(gamePath, 'dota', 'pak01_dir.vpk'), makeCosmeticItemsGame());
+  let fetchCount = 0;
+  service.fetchImpl = async () => { fetchCount += 1; throw new Error('stale definition must not be fetched'); };
+  await storage.patch({ installedMods: {
+    'legacy-weather-record': { id: 'legacy-weather-record', modType: 'special_patch', specialType: 'weather' },
+    'legacy-tower-record': { id: 'legacy-tower-record', modType: 'special_patch', specialType: 'tower' },
+  } });
+
+  await service.applyCosmetics({ 'item:axe:weapon': '20' });
+
+  assert.equal(fetchCount, 0);
+  assert.equal(storage.state.installedMods['legacy-weather-record'], undefined);
+  assert.equal(storage.state.installedMods['legacy-tower-record'], undefined);
+  assert.ok(storage.state.installedMods['vanta-generated-cosmetics']);
+
+  await storage.patch({ installedMods: {
+    ...storage.state.installedMods,
+    'legacy-weather-record': { id: 'legacy-weather-record', modType: 'special_patch', specialType: 'weather' },
+    'legacy-tower-record': { id: 'legacy-tower-record', modType: 'special_patch', specialType: 'tower' },
+  } });
+  await service.applyCosmetics({});
+  assert.equal(fetchCount, 0);
+  assert.equal(storage.state.installedMods['legacy-weather-record'], undefined);
+  assert.equal(storage.state.installedMods['legacy-tower-record'], undefined);
+  assert.equal(storage.state.installedMods['vanta-generated-cosmetics'], undefined);
+});
+
+test('global cosmetics replace the local base item visuals using its real items_game ID', async (t) => {
+  const fixture = await createFixture(t);
+  const { service, storage, gamePath } = fixture;
+  const schema = `"items_game" { "items" { "store_currency_pricepoints" { "1" "base" }
+    "555" { "name" "Default Weather" "baseitem" "1" "prefab" "weather" }
+    "10704" { "name" "Weather Snow" "item_slot" "weather" "image_inventory" "econ/tools/weather_snow" "visuals" { "asset_modifier" { "type" "particle_create" "modifier" "particles/weather/snow.vpcf" } } }
+  } }`;
+  await writeBaseVpk(path.join(gamePath, 'dota', 'pak01_dir.vpk'), schema);
+
+  await service.applyGlobalCosmetics({ weather: '10704' });
+
+  assert.deepEqual(storage.state.settings.schemaCosmeticLoadout, { weather: '10704' });
+  const generated = VpkReader.open(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk'));
+  try {
+    const text = generated.readFile('scripts/items/items_game.txt').toString('utf8');
+    assert.match(text, /"555"\s*\{\s*"name"\s*"Default Weather"/);
+    assert.match(text, /particles\/weather\/snow\.vpcf/);
+    assert.doesNotMatch(text, /"555"\s*\{[^}]*"name"\s*"Weather Snow"/s);
+  } finally { generated.close(); }
 });
 
 test('missing gameinfo is rejected before update and uninstall restores missing patch-owned files', async (t) => {

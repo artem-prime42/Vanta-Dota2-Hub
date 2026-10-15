@@ -256,9 +256,7 @@ function renderThemesPage() {
   const filteredThemes = () => {
     const sourceThemes = state.themeFilter === 'my'
       ? themes.filter((theme) => theme.source === 'local' || theme.source === 'user')
-      : state.themeFilter === 'catalog'
-        ? themes.filter((theme) => theme.source === 'catalog')
-        : themes;
+      : themes;
     return sourceThemes.filter((theme) => themeMatchesSearch(theme, state.themeQuery));
   };
   const renderCards = () => {
@@ -271,9 +269,9 @@ function renderThemesPage() {
   $('#content').innerHTML = `<section class="theme-store-page">
     <button class="theme-store-back" id="theme-store-back"><span aria-hidden="true">←</span>${settingsCopy('Назад', 'Back')}</button>
     <header class="theme-store-heading"><div><p class="theme-store-kicker">${settingsCopy('ПЕРСОНАЛИЗАЦИЯ VANTA', 'VANTA PERSONALIZATION')}</p><h2>${settingsCopy('Магазин тем', 'Theme store')}</h2><p>${settingsCopy('Коллекция тем для VANTA', 'A curated collection of themes for VANTA')}</p></div><div class="theme-store-heading-actions"><button id="theme-create-guide" class="action secondary">${settingsCopy('＋ Создать тему', '＋ Create theme')}</button><button id="theme-open-folder" class="action secondary">${settingsCopy('Папка тем', 'Theme folder')}</button><button id="theme-import" class="action">${settingsCopy('Импортировать тему', 'Import theme')}</button></div></header>
-    <div class="theme-store-toolbar"><div class="theme-store-tabs" role="tablist"><button class="theme-store-tab ${state.themeFilter === 'all' ? 'active' : ''}" data-theme-filter="all">${settingsCopy('Все', 'All')}<span>${themes.length}</span></button><button class="theme-store-tab ${state.themeFilter === 'catalog' ? 'active' : ''}" data-theme-filter="catalog">${settingsCopy('Каталог', 'Catalog')}<span>${themes.filter((theme) => theme.source === 'catalog').length}</span></button><button class="theme-store-tab ${state.themeFilter === 'my' ? 'active' : ''}" data-theme-filter="my">${settingsCopy('Мои темы', 'My themes')}<span>${themes.filter((theme) => theme.source === 'local' || theme.source === 'user').length}</span></button></div><label class="theme-store-search"><span aria-hidden="true">⌕</span><input id="theme-store-search" type="search" value="${escapeHtml(state.themeQuery || '')}" placeholder="${settingsCopy('Поиск по названию, автору или описанию', 'Search by name, author, or description')}" aria-label="${settingsCopy('Поиск тем', 'Search themes')}"><kbd>Ctrl K</kbd></label></div>
+    <div class="theme-store-toolbar"><div class="theme-store-tabs" role="tablist"><button class="theme-store-tab ${state.themeFilter === 'all' ? 'active' : ''}" data-theme-filter="all">${settingsCopy('Все', 'All')}<span>${themes.length}</span></button><button class="theme-store-tab ${state.themeFilter === 'my' ? 'active' : ''}" data-theme-filter="my">${settingsCopy('Мои темы', 'My themes')}<span>${themes.filter((theme) => theme.source === 'local' || theme.source === 'user').length}</span></button></div><label class="theme-store-search"><span aria-hidden="true">⌕</span><input id="theme-store-search" type="search" value="${escapeHtml(state.themeQuery || '')}" placeholder="${settingsCopy('Поиск по названию, автору или описанию', 'Search by name, author, or description')}" aria-label="${settingsCopy('Поиск тем', 'Search themes')}"><kbd>Ctrl K</kbd></label></div>
     <div id="theme-store-grid" class="theme-store-grid"></div>
-    <footer class="theme-store-footer">${settingsCopy('Темы каталога опубликованы отдельно от модов и появляются только здесь. Локальные темы хранятся на этом устройстве.', 'Catalog themes are published separately from mods and appear only here. Local themes stay on this device.')}</footer>
+    <footer class="theme-store-footer">${settingsCopy('Встроенные цветовые темы доступны сразу, а импортированные темы хранятся на этом устройстве.', 'Built-in color themes are ready to use; imported themes stay on this device.')}</footer>
   </section>`;
   renderCards();
   $('#theme-store-search').oninput = (event) => { state.themeQuery = event.target.value; renderCards(); };

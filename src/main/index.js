@@ -80,23 +80,7 @@ async function createWindow() {
   register('favorite:toggle', ({ id }) => service.toggleFavorite(id));
   register('game:detect', () => service.detectGame());
   register('game:play', async () => {
-    if (process.platform === 'win32') {
-      const russian = service?.storage?.state?.settings?.appLanguage === 'ru';
-      const choice = await dialog.showMessageBox(window, {
-        type: 'warning',
-        title: russian ? 'Запустить Dota 2' : 'Launch Dota 2',
-        message: russian ? 'Перед запуском Dota 2 будет выполнен встроенный FixMatchMaking.bat без рекламных страниц.' : 'The bundled FixMatchMaking.bat will run before Dota 2 starts; it does not open advertising pages.',
-        detail: russian
-          ? 'Скрипт изменяет gameinfo и dota.signatures. Файл загружается по HTTPS и проверяется по SHA-1; если Dota 2 уже запущена, скрипт остановится и не будет закрывать игру.'
-          : 'The script modifies gameinfo and dota.signatures. Its patch is fetched over HTTPS and SHA-1 checked; if Dota 2 is already running, the script stops without closing the game.',
-        buttons: [russian ? 'Продолжить' : 'Continue', russian ? 'Отмена' : 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        noLink: true,
-      });
-      if (choice.response !== 0) return { cancelled: true };
-    }
-    return launchDota({ platform: process.platform, shell, tempDirectory: app.getPath('temp') });
+    return launchDota({ platform: process.platform, shell });
   });
   register('game:set-path', async () => { const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] }); if (result.canceled) return service.snapshot(); const resultData = await service.setGamePath(result.filePaths[0]); await updateDiscordPresence(); return resultData; });
   register('game:language-folders', () => service.getLanguageFolders());
@@ -161,6 +145,8 @@ async function createWindow() {
   register('diagnostics:renderer-log', ({ level = 'error', message = '', stack = '' } = {}) => diagnosticLogger.write(level, `[renderer] ${message}${stack ? `\n${stack}` : ''}`));
   register('cosmetics:list', () => service.getCosmetics());
   register('cosmetics:apply', ({ picks } = {}) => service.applyCosmetics(picks));
+  register('cosmetics:global-set', ({ slot, itemId } = {}) => service.setGlobalCosmetic({ slot, itemId }));
+  register('cosmetics:global-apply', ({ picks } = {}) => service.applyGlobalCosmetics(picks));
   register('hero-grids:list', () => service.getHeroGrids());
   register('hero-grids:diagnose', () => service.diagnoseHeroGrid());
   register('hero-grids:user-grids', () => service.getHeroGridUserGrids());

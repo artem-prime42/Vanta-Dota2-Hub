@@ -5,10 +5,10 @@ document.addEventListener('click', (event) => {
   event.stopImmediatePropagation();
   const categorySections = {
     heroes: 'heroes', 'hero-items': 'heroes', herofx: 'heroes', 'hero-sounds': 'other',
-    terrains: 'world', trees: 'world', river: 'world', creeps: 'world', towers: 'world', roshan: 'world', ancient: 'world', tormentor: 'world', wards: 'world', couriers: 'world', pedestal: 'other', 'creep-deny': 'effects',
-    backgrounds: 'interface', huds: 'interface', emblems: 'interface', 'versus-screens': 'interface', 'item-icons': 'interface', ranks: 'interface', pings: 'interface', cursors: 'interface', announcers: 'interface', 'mega-kill': 'interface', music: 'interface',
+    terrains: 'world', terrain: 'world', landscapes: 'world', landscape: 'world', maps: 'world', map: 'world', trees: 'world', river: 'world', creeps: 'world', towers: 'world', weather: 'world', roshan: 'world', ancient: 'world', tormentor: 'world', wards: 'world', couriers: 'world', 'creep-deny': 'world', 'kill-effects': 'world',
+    backgrounds: 'interface', huds: 'interface', emblems: 'interface', 'versus-screens': 'interface', 'item-icons': 'interface', ranks: 'interface', pings: 'interface', cursors: 'interface', 'loading-screens': 'interface', announcers: 'interface', 'mega-kill': 'interface', 'kill-streak': 'interface', music: 'interface',
     shaders: 'effects', 'ti-bp-effects': 'effects', 'item-effects': 'effects', 'ranged-attack': 'effects', 'high-five': 'effects',
-    packs: 'interface', optimization: 'other', other: 'other', sites: 'other', announcers: 'interface', music: 'interface', sounds: 'other', 'mega-kill': 'interface', fonts: 'other'
+    pedestal: 'other', packs: 'other', optimization: 'other', other: 'other', sites: 'other', sounds: 'other', fonts: 'other'
   };
   if (button.dataset.cardHero) {
     state.view = 'mods';

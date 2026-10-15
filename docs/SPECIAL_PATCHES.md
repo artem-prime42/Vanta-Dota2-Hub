@@ -1,6 +1,8 @@
-# Special client patches (Weather and Towers)
+# Generated cosmetics and special client patches
 
-VANTA keeps these entries separate from ZIP/VPK cosmetic installs. Catalog items use `modType: "special_patch"`, `specialType: "weather" | "tower"`, a source revision, and `requiredFiles` descriptors containing the upstream item-definition URL, numeric Dota item ID, and Git blob SHA-1. New variants can be added in catalog data without adding per-mod application logic.
+Hero cosmetics continue to use the existing hero loadout parser and UI. Global cosmetic choices are generated from the installed `game/dota/pak01_dir.vpk` item schema and share its transactional `scripts/items/items_game.txt` override, while keeping their selections in a separate `schemaCosmeticLoadout` setting. Interface groups are Mega-kills, Game interface, Music, Loading screens, Announcers, and Kill streaks; the other supported global slots are shown under World. Generated entries use the numeric donor item ID from the local schema and replace the matching local base-item ID, so the catalog follows the installed game rather than a manually maintained list. Preview images prefer the bundled `dota2-media` index and fall back to the item’s Steam inventory icon.
+
+Older releases stored Weather and Towers as fixed downloadable special-patch definitions (`modType: "special_patch"`, `specialType: "weather" | "tower"`). Those legacy records are retired during a generated cosmetics rebuild and are not downloaded or reparsed as part of the new selection flow. The fixed definitions remain available to the legacy patch service for compatibility with existing installs and explicit patch operations.
 
 ## Upstream behavior reviewed
 

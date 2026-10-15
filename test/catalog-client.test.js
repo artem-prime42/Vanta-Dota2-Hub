@@ -47,6 +47,36 @@ test('AppService exposes bundled Weather and Tower patches without catalog entri
   assert.deepEqual(service.specialPatches.getMods().map((mod) => mod.id), mods.map((mod) => mod.id));
 });
 
+test('Weather and Towers appear as generated World subcategories and fixed patch entries stay hidden', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-environment-cosmetics-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const service = new AppService({ rootDir: root });
+  await service.storage.init();
+  service.gamePath = '/installed/dota';
+  service.getCosmeticListing = async () => ({
+    heroes: [],
+    picks: {},
+    error: null,
+    globalSlots: [
+      { id: 'weather', targetId: '555', categoryId: 'weather', name: 'Weather', options: [{ itemId: '10704', name: 'Weather Snow', previewUrl: 'https://example.test/weather.png' }] },
+      { id: 'radianttowers', targetId: '677', categoryId: 'towers', name: 'Radiant Towers', options: [{ itemId: '12936', name: 'Radiant Towers', previewUrl: 'https://example.test/tower.png' }] },
+    ],
+  });
+
+  const generalBrowseable = service.snapshot().mods;
+  const world = await service.listMods({ includeGeneratedCosmetics: true });
+  const cosmetics = await service.getCosmetics();
+
+  assert.equal(generalBrowseable.some((mod) => mod.modType === 'special_patch' && ['weather', 'tower'].includes(mod.specialType)), false);
+  assert.equal(service.getAvailableMods().filter((mod) => mod.modType === 'special_patch').length, 13);
+  assert.ok(world.mods.some((mod) => mod.modType === 'schema_cosmetic' && mod.categoryId === 'weather'));
+  assert.ok(world.mods.some((mod) => mod.modType === 'schema_cosmetic' && mod.categoryId === 'towers'));
+  assert.equal(world.mods.some((mod) => mod.modType === 'special_patch' && ['weather', 'tower'].includes(mod.specialType)), false);
+  assert.ok(world.categories.includes('weather'));
+  assert.ok(world.categories.includes('towers'));
+  assert.equal(Object.hasOwn(cosmetics, 'globalSlots'), true);
+});
+
 test('catalog client reads cached author profiles without contacting a remote source', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-authors-'));
   const cache = path.join(root, 'cache');

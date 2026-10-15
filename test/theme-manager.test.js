@@ -18,6 +18,7 @@ async function createManager(t, overrides = {}) {
 test('ThemeManager loads the default VANTA theme and exposes the semantic token set', async (t) => {
   const { manager } = await createManager(t);
   const themes = manager.getThemes();
+  assert.equal(themes[0].id, 'vanta-default', 'the standard VANTA theme should be the first theme shown');
   assert.ok(themes.some((theme) => theme.id === 'vanta-default'));
   assert.equal(themes.filter((theme) => theme.source === 'builtin').length, BUNDLED_THEMES.length + 1);
   assert.ok(BUNDLED_THEMES.length >= 3, 'the theme catalog should ship with several color palettes');
@@ -27,6 +28,25 @@ test('ThemeManager loads the default VANTA theme and exposes the semantic token 
   const defaultTheme = manager.getTheme('vanta-default');
   assert.equal(defaultTheme.name, DEFAULT_THEME.name);
   assert.equal(defaultTheme.colors.accent, DEFAULT_THEME.colors.accent);
+});
+
+test('built-in color themes include localized orange, yellow, blue, violet, and rose palettes', async (t) => {
+  const { manager } = await createManager(t);
+  const expected = [
+    ['vanta-citrus', '#ff914d', 'Цитрусовый жар'],
+    ['vanta-solar', '#f5c84c', 'Золотое солнце'],
+    ['vanta-royal-blue', '#5b9cff', 'Королевский синий'],
+    ['vanta-violet', '#bb8cff', 'Фиолетовые сумерки'],
+    ['vanta-rose', '#f078a0', 'Розовый кварц'],
+  ];
+
+  for (const [id, accent, russianName] of expected) {
+    const theme = manager.getTheme(id);
+    assert.equal(theme.source, 'builtin');
+    assert.equal(theme.colors.accent, accent);
+    assert.equal(theme.translations.ru.name, russianName);
+    assert.equal(manager.validateTheme(theme, new Set()).valid, true, `${id} must pass theme validation`);
+  }
 });
 
 test('ThemeManager validates a custom theme and persists it to the user themes directory', async (t) => {

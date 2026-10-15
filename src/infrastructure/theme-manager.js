@@ -56,13 +56,14 @@ const DEFAULT_THEME = {
   },
 };
 
-function createBundledTheme({ id, name, author = 'VANTA', description, colors, background, effects, shape }) {
+function createBundledTheme({ id, name, author = 'VANTA', description, translations, colors, background, effects, shape }) {
   return {
     id,
     name,
     author,
     version: '1.0.0',
     description,
+    ...(translations ? { translations } : {}),
     source: 'builtin',
     colors: { ...DEFAULT_THEME.colors, ...colors },
     ...(background ? { background } : {}),
@@ -136,6 +137,61 @@ const BUNDLED_THEMES = [
     },
     effects: { blurSurface: 0, blurSidebar: 0, blurModal: 0, shadowSmall: 'rgba(0, 0, 0, 0.25)', shadowMedium: 'rgba(0, 0, 0, 0.42)', shadowLarge: 'rgba(0, 0, 0, 0.68)' },
     shape: { radiusSmall: 2, radiusMedium: 4, radiusLarge: 7 },
+  }),
+  createBundledTheme({
+    id: 'vanta-citrus',
+    name: 'Citrus Ember',
+    description: 'Warm orange highlights over rich espresso and charcoal surfaces.',
+    translations: { ru: { name: 'Цитрусовый жар', description: 'Тёплые оранжевые акценты на фоне эспрессо и графита.' } },
+    colors: {
+      background: '#100a07', surface: '#19100b', surfaceElevated: '#26180f', surfaceHover: '#382113', surfaceActive: '#4b2b18',
+      text: '#fff4e9', textMuted: '#c7a48b', textDisabled: '#806551', border: '#593a27', accent: '#ff914d', accentHover: '#ffb078', accentActive: '#e66e2d',
+      input: '#130c08', button: '#ff914d', card: '#20140d', sidebar: '#100b08', modal: '#20140d', tooltip: '#382113', scrollbar: '#9c5a31', focus: '#ffc18f',
+    },
+  }),
+  createBundledTheme({
+    id: 'vanta-solar',
+    name: 'Solar Gold',
+    description: 'Golden yellow actions and warm ivory text in a midnight interface.',
+    translations: { ru: { name: 'Золотое солнце', description: 'Золотистые акценты и тёплый светлый текст в ночном интерфейсе.' } },
+    colors: {
+      background: '#0d0c08', surface: '#17150c', surfaceElevated: '#24200f', surfaceHover: '#332c12', surfaceActive: '#443a16',
+      text: '#fff9e8', textMuted: '#c5b98a', textDisabled: '#7b714d', border: '#51451d', accent: '#f5c84c', accentHover: '#ffdc77', accentActive: '#d8a92c',
+      success: '#7bd89a', warning: '#ffd166', danger: '#fa7777', input: '#111007', button: '#f5c84c', card: '#1e1a0d', sidebar: '#0e0d08', modal: '#1e1a0d', tooltip: '#332c12', scrollbar: '#8c7831', focus: '#ffe28b',
+    },
+  }),
+  createBundledTheme({
+    id: 'vanta-royal-blue',
+    name: 'Royal Blue',
+    description: 'A crisp sapphire accent with deep navy panels and cool blue-gray text.',
+    translations: { ru: { name: 'Королевский синий', description: 'Сапфировые акценты, глубокие панели и холодный серо-голубой текст.' } },
+    colors: {
+      background: '#070b13', surface: '#0e1420', surfaceElevated: '#151f30', surfaceHover: '#1d2b41', surfaceActive: '#263852',
+      text: '#eff5ff', textMuted: '#9dafc9', textDisabled: '#62748e', border: '#2a3d59', accent: '#5b9cff', accentHover: '#8ab8ff', accentActive: '#3978d5',
+      success: '#69d6a0', warning: '#f2c76a', danger: '#ff7185', input: '#090f19', button: '#5b9cff', card: '#111a29', sidebar: '#080d16', modal: '#111a29', tooltip: '#1d2b41', scrollbar: '#45699a', focus: '#a8caff',
+    },
+  }),
+  createBundledTheme({
+    id: 'vanta-violet',
+    name: 'Violet Dusk',
+    description: 'Soft lavender highlights, plum shadows, and a polished dusk palette.',
+    translations: { ru: { name: 'Фиолетовые сумерки', description: 'Мягкая лаванда, сливовые тени и выразительная вечерняя палитра.' } },
+    colors: {
+      background: '#0d0913', surface: '#17101f', surfaceElevated: '#231832', surfaceHover: '#302044', surfaceActive: '#3f2b58',
+      text: '#f8f0ff', textMuted: '#b9a4cc', textDisabled: '#776187', border: '#49345d', accent: '#bb8cff', accentHover: '#d1b0ff', accentActive: '#9664d4',
+      success: '#72d6a2', warning: '#f0c875', danger: '#ff7c91', input: '#100b17', button: '#bb8cff', card: '#1b1325', sidebar: '#0e0a14', modal: '#1b1325', tooltip: '#302044', scrollbar: '#725394', focus: '#ddc3ff',
+    },
+  }),
+  createBundledTheme({
+    id: 'vanta-rose',
+    name: 'Rose Quartz',
+    description: 'Dusty rose accents and soft blush tones balanced by dark plum surfaces.',
+    translations: { ru: { name: 'Розовый кварц', description: 'Пудрово-розовые акценты и тёплый светлый текст на сливовом фоне.' } },
+    colors: {
+      background: '#10090d', surface: '#1b1016', surfaceElevated: '#291720', surfaceHover: '#3b202d', surfaceActive: '#4c2939',
+      text: '#fff1f5', textMuted: '#c8a0ae', textDisabled: '#805b69', border: '#573544', accent: '#f078a0', accentHover: '#ff9fbb', accentActive: '#d85a82',
+      success: '#6ed6a0', warning: '#f1ca73', danger: '#ff6c7d', input: '#140b10', button: '#f078a0', card: '#21131a', sidebar: '#110a0e', modal: '#21131a', tooltip: '#3b202d', scrollbar: '#96536b', focus: '#ffc1d2',
+    },
   }),
 ];
 const BUNDLED_THEME_IDS = new Set([DEFAULT_THEME.id, ...BUNDLED_THEMES.map((theme) => theme.id)]);
@@ -398,7 +454,11 @@ class ThemeManager {
       const defaultTheme = normalizeTheme(DEFAULT_THEME, this.themes.keys());
       this.themes.set(defaultTheme.id, defaultTheme);
     }
-    const ordered = [...this.themes.values()].sort((left, right) => left.name.localeCompare(right.name));
+    const ordered = [...this.themes.values()].sort((left, right) => {
+      if (left.id === DEFAULT_THEME.id) return -1;
+      if (right.id === DEFAULT_THEME.id) return 1;
+      return left.name.localeCompare(right.name);
+    });
     this.themes = new Map(ordered.map((theme) => [theme.id, theme]));
     return [...this.themes.values()];
   }
@@ -450,7 +510,11 @@ class ThemeManager {
 
   getThemes() {
     const themes = [...this.themes.values()];
-    return themes.sort((left, right) => left.name.localeCompare(right.name)).map((theme) => ({
+    return themes.sort((left, right) => {
+      if (left.id === DEFAULT_THEME.id) return -1;
+      if (right.id === DEFAULT_THEME.id) return 1;
+      return left.name.localeCompare(right.name);
+    }).map((theme) => ({
       ...theme,
       background: { ...theme.background, imageUrl: this.backgroundImageUrls.get(theme.id) || null },
       source: BUNDLED_THEME_IDS.has(theme.id) ? 'builtin' : 'local',

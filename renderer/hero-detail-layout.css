@@ -20,6 +20,7 @@
   background: radial-gradient(ellipse at 52% 48%, rgba(78, 83, 111, .2), transparent 57%), linear-gradient(145deg, #090b12, #11101c 55%, #171126);
 }
 .hero-preview-placeholder {
+  position: relative;
   display: grid;
   align-content: center;
   justify-self: stretch;
@@ -30,6 +31,7 @@
 }
 .hero-preview-placeholder > span { color: var(--theme-accent, #62cbe9); font-size: 34px; opacity: .75; }
 .hero-preview-placeholder strong { font-size: 14px; font-weight: 500; }
+.hero-preview-coming-soon { position: absolute; inset: auto 0 18px; color: var(--theme-muted, #9298a5); font-size: 11px; letter-spacing: .14em; text-align: center; text-transform: uppercase; }
 .hero-preview-actions { width: 100%; padding: 12px; }
 .hero-preview-actions .hero-cosmetic-actions { margin-top: 0; }
 .hero-preview-actions .cosmetics-footer { position: static; padding: 12px; border-radius: 10px; background: color-mix(in srgb, var(--theme-surface, #17191d) 92%, transparent); }

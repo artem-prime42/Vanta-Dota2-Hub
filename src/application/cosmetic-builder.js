@@ -7,6 +7,30 @@ const { heroDisplayName, normalizeHeroKey } = require('../core/models');
 const SCHEMA_ENTRY = 'scripts/items/items_game.txt';
 const HERO_PREFIX = 'npc_dota_hero_';
 const SLOT_ALIASES = { shoulder: 'shoulders', arm: 'arms', offhand_weapon: 'offhand', off_hand_weapon: 'offhand', off_hand: 'offhand' };
+const MARS_UNSUPPORTED_COMPANION_SLOTS = new Set(['courier', 'pet', 'summon']);
+const GLOBAL_COSMETIC_CATEGORIES = {
+  weather: ['weather', 'weather'],
+  terrain: ['terrains', 'terrain'],
+  courier: ['couriers', 'courier'],
+  ward: ['wards', 'ward'],
+  radiantcreeps: ['creeps', 'radiantcreeps'],
+  direcreeps: ['creeps', 'direcreeps'],
+  radiantsiegecreeps: ['creeps', 'radiantsiegecreeps'],
+  diresiegecreeps: ['creeps', 'diresiegecreeps'],
+  radianttowers: ['towers', 'radianttowers'],
+  diretowers: ['towers', 'diretowers'],
+  roshan: ['roshan', 'roshan'],
+  ancient: ['ancient', 'ancient'],
+  tormentor: ['tormentor', 'tormentor'],
+  kill_effect: ['kill-effects', 'kill_effect'],
+  hud_skin: ['huds', 'hud_skin'],
+  loading_screen: ['loading-screens', 'loading_screen'],
+  versus_screen: ['versus-screens', 'versus_screen'],
+  announcer: ['announcers', 'announcer'],
+  mega_kills: ['mega-kill', 'mega_kills'],
+  music: ['music', 'music'],
+  streak_effect: ['kill-streak', 'streak_effect'],
+};
 const COSMETIC_EFFECTS = [
   { id: 'fire', name: 'Огонь', nameEn: 'Fire', modifier: 'particles/econ/courier/courier_trail_lava/courier_trail_lava.vpcf' },
   { id: 'lightnings', name: 'Молнии', nameEn: 'Lightning', modifier: 'particles/econ/courier/courier_platinum_roshan/platinum_roshan_ambient.vpcf' },
@@ -74,6 +98,21 @@ function cosmeticPreviewUrl(heroKey, heroName, itemName) {
   candidates.push(normalizedMediaKey(item));
   const file = candidates.map((key) => index.names.get(key)).find(Boolean);
   return file ? `${MEDIA_RAW_BASE_URL}/${index.commit}/${file.split('/').map(encodeURIComponent).join('/')}` : null;
+}
+
+function globalCosmeticPreviewUrl(itemName, slotName) {
+  const index = getMediaIndex();
+  const candidates = [itemName, `${slotName} ${itemName}`, `${String(slotName || '').replace(/_/g, ' ')} ${itemName}`]
+    .map(normalizedMediaKey);
+  const file = candidates.map((key) => index.names.get(key)).find(Boolean);
+  return file ? `${MEDIA_RAW_BASE_URL}/${index.commit}/${file.split('/').map(encodeURIComponent).join('/')}` : null;
+}
+
+function globalSlotDetails(slot) {
+  const normalized = normalizedSlot(slot);
+  const category = GLOBAL_COSMETIC_CATEGORIES[normalized];
+  if (!category) return { categoryId: 'other', slot: normalized };
+  return { categoryId: category[0], slot: category[1] };
 }
 
 function cosmeticInventoryIconUrl(icon) {
@@ -233,6 +272,10 @@ function normalizedSlot(value) {
   return SLOT_ALIASES[slot] || slot;
 }
 
+function isUnsupportedMarsCompanionSlot(hero, slot) {
+  return normalizeHeroKey(hero) === 'mars' && MARS_UNSUPPORTED_COMPANION_SLOTS.has(normalizedSlot(slot));
+}
+
 function cosmeticRarity(children, prefabs) {
   const candidates = [
     field(children, 'item_rarity'),
@@ -350,21 +393,34 @@ function styleOverrideEntries(text, children, prefabs, styleId) {
   return foundStyle ? combined : null;
 }
 
+function particleEffectNames(source) {
+  const names = [...String(source || '').matchAll(/["']([^"']+\.vpcf(?:_c)?)["']/gi)]
+    .map((match) => match[1].split(/[\\/]/).pop().replace(/\.vpcf(?:_c)?$/i, ''));
+  return [...new Set(names)];
+}
+
+function particleEffectNamesFromEntries(text, entries) {
+  const names = [];
+  for (const entry of entries) {
+    if (entry.key.toLowerCase() === 'styles') continue;
+    if (entry.isBlock) names.push(...particleEffectNamesFromEntries(text, parseChildren(text, entry.bodyStart, entry.bodyEnd)));
+    else if (/\.vpcf(?:_c)?$/i.test(entry.value)) {
+      names.push(entry.value.split(/[\\/]/).pop().replace(/\.vpcf(?:_c)?$/i, ''));
+    }
+  }
+  return [...new Set(names)];
+}
+
 function visualEffectNames(text, node, prefabs = new Map()) {
   const visuals = inheritedBlock(node.children, 'visuals', prefabs);
-  if (!visuals) return [];
-  const section = text.slice(visuals.bodyStart, visuals.bodyEnd);
-  const names = [...section.matchAll(/"(?:particle|modifier)"\s+"([^"]+\.vpcf)"/gi)].map((match) => path.basename(match[1], '.vpcf'));
-  return [...new Set(names)];
+  return visuals
+    ? particleEffectNamesFromEntries(text, parseChildren(text, visuals.bodyStart, visuals.bodyEnd))
+    : [];
 }
 
 function styleEffectNames(text, children, prefabs, styleId) {
   const entries = styleOverrideEntries(text, children, prefabs, styleId);
-  if (!entries?.length) return [];
-  const source = entries.map((entry) => entry.raw).join('\n');
-  const names = [...source.matchAll(/"(?:particle|modifier)"\s+"([^"]+\.vpcf)"/gi)]
-    .map((match) => path.basename(match[1], '.vpcf'));
-  return [...new Set(names)];
+  return entries?.length ? particleEffectNames(entries.map((entry) => entry.raw).join('\n')) : [];
 }
 
 function itemNodes(text) {
@@ -392,9 +448,7 @@ function describeItems(text, { localization = '' } = {}) {
       ...style,
       name: localizedCosmeticName(style.name, tokens, style.id === '0' ? '' : `Style ${style.id}`),
     }));
-    // Arcana alternate styles are not reliable in the generated client override.
-    // Keep the first/default style selectable and omit only the second listed style.
-    const styles = quality === 'arcana' ? parsedStyles.filter((_, index) => index !== 1) : parsedStyles;
+    const styles = parsedStyles;
     return {
       ...item,
       rawName,
@@ -417,6 +471,7 @@ function describeItems(text, { localization = '' } = {}) {
   for (const item of defaults) {
     if (!item.slot || !item.heroes.length) continue;
     for (const hero of item.heroes) {
+      if (isUnsupportedMarsCompanionSlot(hero, item.slot)) continue;
       const heroRecord = heroes.get(hero) || { key: hero, name: heroDisplayName(hero), slots: new Map() };
       const slotRecord = heroRecord.slots.get(item.slot) || { id: `item:${hero}:${item.slot}`, name: item.slot.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()), targetId: item.id, options: [] };
       heroRecord.slots.set(item.slot, slotRecord);
@@ -425,6 +480,7 @@ function describeItems(text, { localization = '' } = {}) {
   }
   for (const item of wearables) {
     for (const hero of item.heroes) {
+      if (isUnsupportedMarsCompanionSlot(hero, item.slot)) continue;
       const target = defaults.find((candidate) => candidate.slot === item.slot && candidate.heroes.includes(hero));
       if (!target) continue;
       const heroRecord = heroes.get(hero) || { key: hero, name: heroDisplayName(hero), slots: new Map() };
@@ -465,8 +521,215 @@ function describeItems(text, { localization = '' } = {}) {
   })).sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function buildWearableBlock(text, source, target, effectId = '', styleOverrides = []) {
-  let output = text.slice(source.start, source.end);
+function describeGlobalCosmetics(text, { localization = '' } = {}) {
+  const tokens = localization instanceof Map ? localization : localizationTokens(String(localization || ''));
+  const prefabs = prefabDefinitions(text);
+  const nodes = itemNodes(text).map((node) => {
+    const rawName = field(node.children, 'name');
+    const prefab = field(node.children, 'prefab').toLowerCase();
+    const slot = normalizedSlot(field(node.children, 'item_slot') || prefab);
+    const category = globalSlotDetails(slot);
+    return {
+      ...node,
+      rawName,
+      name: localizedCosmeticName(rawName, tokens, fallbackCosmeticName(rawName, node.id)),
+      prefab,
+      slot,
+      categoryId: category.categoryId,
+      targetSlot: category.slot,
+      baseItem: field(node.children, 'baseitem') === '1',
+      visuals: block(node.children, 'visuals'),
+    };
+  });
+  const bases = nodes.filter((item) => item.baseItem && GLOBAL_COSMETIC_CATEGORIES[item.slot]);
+  const slots = new Map();
+  for (const base of bases) {
+    const slot = slots.get(base.slot) || {
+      id: base.slot,
+      targetId: base.id,
+      name: base.name,
+      categoryId: base.categoryId,
+      options: [],
+    };
+    if (slot.options.length) {
+      slots.set(base.slot, slot);
+      continue;
+    }
+    for (const item of nodes) {
+      if (item.id === base.id || item.baseItem || item.slot !== base.slot || !item.visuals || !item.name) continue;
+      slot.options.push({
+        id: item.id,
+        itemId: item.id,
+        name: item.name,
+        baseName: item.name,
+        previewUrl: globalCosmeticPreviewUrl(item.name, base.slot),
+        previewFallbackUrl: cosmeticInventoryIconUrl(inheritedField(item.children, 'image_inventory', prefabs)),
+        categoryId: base.categoryId,
+        slot: base.slot,
+      });
+    }
+    slot.options.sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
+      || Number(left.styleId || 0) - Number(right.styleId || 0));
+    slots.set(base.slot, slot);
+  }
+  return [...slots.values()].filter((slot) => slot.options.length);
+}
+
+function sanitizeGlobalCosmeticSelections(slots, selections = {}) {
+  const available = new Map((Array.isArray(slots) ? slots : []).map((slot) => [String(slot.id), slot]));
+  const valid = {};
+  const discarded = [];
+  const source = selections && typeof selections === 'object' && !Array.isArray(selections) ? Object.entries(selections) : [];
+  for (const [slotId, rawSelection] of source) {
+    const itemId = String(typeof rawSelection === 'object' ? rawSelection?.itemId || '' : rawSelection || '');
+    const styleId = typeof rawSelection === 'object' ? String(rawSelection?.styleId ?? '') : '';
+    if (!itemId) continue;
+    const slot = available.get(slotId);
+    const option = slot?.options.find((candidate) => String(candidate.itemId || candidate.id) === itemId
+      && String(candidate.styleId || '') === styleId);
+    if (!option) {
+      discarded.push({ slotId, itemId });
+      continue;
+    }
+    valid[slotId] = styleId ? { itemId, styleId } : itemId;
+  }
+  return { selections: valid, discarded };
+}
+
+function mergeMissingBlockText(targetText, fallbackText) {
+  const targetOpen = targetText.indexOf('{');
+  const targetClose = matchingBrace(targetText, targetOpen);
+  const fallbackOpen = fallbackText.indexOf('{');
+  const fallbackClose = matchingBrace(fallbackText, fallbackOpen);
+  if (targetOpen < 0 || targetClose < 0 || fallbackOpen < 0 || fallbackClose < 0) return targetText;
+
+  const targetEntries = parseChildren(targetText, targetOpen + 1, targetClose);
+  const fallbackEntries = parseChildren(fallbackText, fallbackOpen + 1, fallbackClose);
+  const edits = [];
+  const additions = [];
+  for (const fallback of fallbackEntries) {
+    if (fallback.key.toLowerCase() === 'prefab') continue;
+    const current = targetEntries.find((entry) => entry.key.toLowerCase() === fallback.key.toLowerCase());
+    if (!current) {
+      additions.push(fallbackText.slice(fallback.start, fallback.end));
+    } else if (current.isBlock && fallback.isBlock) {
+      const currentRaw = targetText.slice(current.start, current.end);
+      const fallbackRaw = fallbackText.slice(fallback.start, fallback.end);
+      const merged = mergeMissingBlockText(currentRaw, fallbackRaw);
+      if (merged !== currentRaw) edits.push({ start: current.start, end: current.end, text: merged });
+    }
+  }
+
+  let output = targetText;
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    output = `${output.slice(0, edit.start)}${edit.text}${output.slice(edit.end)}`;
+  }
+  if (additions.length) {
+    const close = matchingBrace(output, output.indexOf('{'));
+    output = `${output.slice(0, close)}\n    ${additions.join('\n    ')}\n  ${output.slice(close)}`;
+  }
+  return output;
+}
+
+function materializeInheritedWearable(text, source, prefabs) {
+  const itemText = text.slice(source.start, source.end);
+  const inherited = [];
+  const visited = new Set();
+  const collect = (children) => {
+    for (const name of field(children, 'prefab').toLowerCase().split(/[\s,]+/).filter(Boolean)) {
+      if (visited.has(name)) continue;
+      visited.add(name);
+      const definition = prefabs.get(name);
+      if (!definition) continue;
+      inherited.push(...definition.filter((entry) => entry.key.toLowerCase() !== 'prefab'));
+      collect(definition);
+    }
+  };
+  collect(source.children);
+  if (!inherited.length) return itemText;
+  const inheritedText = `"__vanta_inherited__" {\n${inherited.map((entry) => text.slice(entry.start, entry.end)).join('\n')}\n}`;
+  return mergeMissingBlockText(itemText, inheritedText);
+}
+
+function stripNestedCosmeticRestrictions(fragment) {
+  const open = fragment.indexOf('{');
+  const close = fragment.lastIndexOf('}');
+  if (open < 0 || close <= open) return fragment;
+  const edits = [];
+  for (const entry of parseChildren(fragment, open + 1, close)) {
+    if (!entry.isBlock) continue;
+    if (['unlock', 'styles'].includes(entry.key.toLowerCase())) edits.push({ start: entry.start, end: entry.end, value: '' });
+    else {
+      const child = fragment.slice(entry.start, entry.end);
+      const stripped = stripNestedCosmeticRestrictions(child);
+      if (stripped !== child) edits.push({ start: entry.start, end: entry.end, value: stripped });
+    }
+  }
+  let result = fragment;
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    result = `${result.slice(0, edit.start)}${edit.value}${result.slice(edit.end)}`;
+  }
+  return result;
+}
+
+function replaceItemVisuals(text, target, donor) {
+  const donorVisuals = block(donor.children, 'visuals');
+  if (!donorVisuals) throw new Error(`${field(donor.children, 'name') || donor.id} has no usable visuals block.`);
+  const visualsText = stripNestedCosmeticRestrictions(text.slice(donorVisuals.start, donorVisuals.end));
+
+  const targetText = text.slice(target.start, target.end);
+  const targetOpen = targetText.indexOf('{');
+  const targetClose = targetText.lastIndexOf('}');
+  const targetChildren = parseChildren(targetText, targetOpen + 1, targetClose);
+  const targetVisuals = block(targetChildren, 'visuals');
+  if (targetVisuals) return `${targetText.slice(0, targetVisuals.start)}${visualsText}${targetText.slice(targetVisuals.end)}`;
+  return `${targetText.slice(0, -1)}\n\t\t${visualsText}\n\t}`;
+}
+
+function buildGlobalCosmeticReplacements(text, selections = {}) {
+  const nodes = itemNodes(text);
+  const prefabs = prefabDefinitions(text);
+  const listedSlots = describeGlobalCosmetics(text);
+  const slotById = new Map(listedSlots.map((slot) => [slot.id, slot]));
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const baseBySlot = new Map();
+  for (const node of nodes) {
+    if (field(node.children, 'baseitem') !== '1') continue;
+    const slot = normalizedSlot(field(node.children, 'item_slot') || field(node.children, 'prefab'));
+    if (GLOBAL_COSMETIC_CATEGORIES[slot] && !baseBySlot.has(slot)) baseBySlot.set(slot, node);
+  }
+  const replacements = new Map();
+  const errors = [];
+  for (const [slotId, rawSelection] of Object.entries(selections || {})) {
+    const itemId = String(typeof rawSelection === 'object' ? rawSelection?.itemId || '' : rawSelection || '');
+    if (!itemId) continue;
+    const slot = slotById.get(slotId);
+    const base = baseBySlot.get(slotId);
+    const donor = byId.get(itemId);
+    const option = slot?.options.find((candidate) => String(candidate.itemId) === itemId);
+    if (!base || !donor || !option) {
+      errors.push(`Cosmetic ${itemId} is not available in the ${slotId} slot of the installed game schema.`);
+      continue;
+    }
+    if (!block(donor.children, 'visuals')) { errors.push(`${field(donor.children, 'name') || itemId} has no visuals block.`); continue; }
+    if (replacements.has(base.id)) {
+      errors.push(`More than one selected cosmetic targets ${field(base.children, 'name') || base.id}.`);
+      continue;
+    }
+    replacements.set(base.id, {
+      id: base.id,
+      content: replaceItemVisuals(text, base, donor),
+      sourceId: donor.id,
+      sourceName: field(donor.children, 'name'),
+      slot: slotId,
+    });
+  }
+  if (errors.length) throw new Error(errors.join(' '));
+  return replacements;
+}
+
+function buildWearableBlock(text, source, target, effectId = '', styleOverrides = [], prefabs = new Map()) {
+  let output = materializeInheritedWearable(text, source, prefabs);
   const sourceChildren = parseChildren(output, output.indexOf('{') + 1, output.lastIndexOf('}'));
   const edits = [];
   const idStart = source.keyStart - source.start;
@@ -533,12 +796,15 @@ function mergeOverrideEntries(blockText, overrideEntries) {
 }
 
 function applyStyleOverrides(itemBlockText, overrideEntries) {
-  const visualKeys = new Set(['skin', 'asset_modifier', 'asset_modifiers', 'particle', 'particles', 'modifier']);
+  const visualKeys = new Set([
+    'skin', 'alternate_icon', 'alternate_icons', 'asset_modifier', 'asset_modifiers',
+    'particle', 'particles', 'modifier', 'attribute_controlled_attached_particles',
+  ]);
   const visualOverrides = [];
   const itemOverrides = [];
   for (const entry of overrideEntries) {
     if (entry.isBlock && entry.key.toLowerCase() === 'visuals') visualOverrides.push(...overrideEntryChildren(entry));
-    else if (visualKeys.has(entry.key.toLowerCase())) visualOverrides.push(entry);
+    else if (visualKeys.has(entry.key.toLowerCase()) || /^asset_modifier\d+$/i.test(entry.key) || particleEffectNames(entry.raw).length) visualOverrides.push(entry);
     else itemOverrides.push(entry);
   }
 
@@ -573,6 +839,94 @@ function appendCosmeticEffect(itemBlockText, effect) {
   return `${itemBlockText.slice(0, outerClose)}\n    "visuals" {\n      ${modifier}\n    }\n  ${itemBlockText.slice(outerClose)}`;
 }
 
+function staticAttributeValues(text, item, prefabs, attributeName) {
+  const attributes = inheritedBlock(item.children, 'static_attributes', prefabs);
+  if (!attributes) return [];
+  const values = [];
+  for (const entry of parseChildren(text, attributes.bodyStart, attributes.bodyEnd)) {
+    if (entry.key.toLowerCase() !== attributeName.toLowerCase()) continue;
+    if (entry.isBlock) {
+      const value = field(parseChildren(text, entry.bodyStart, entry.bodyEnd), 'value');
+      if (value) values.push(value);
+    } else if (entry.value) values.push(entry.value);
+  }
+  return [...new Set(values.flatMap((value) => String(value).match(/\d+/g) || []))];
+}
+
+function abilityEffectModifiers(itemText, slotId, selectedStyleId) {
+  const open = itemText.indexOf('{');
+  const close = matchingBrace(itemText, open);
+  if (open < 0 || close < 0) return [];
+  const children = parseChildren(itemText, open + 1, close);
+  const visuals = block(children, 'visuals');
+  if (!visuals) return [];
+  const activeStyle = String(selectedStyleId || '0');
+  return parseChildren(itemText, visuals.bodyStart, visuals.bodyEnd)
+    .filter((entry) => entry.isBlock && /^asset_modifier\d*$/i.test(entry.key))
+    .filter((entry) => {
+      const modifier = parseChildren(itemText, entry.bodyStart, entry.bodyEnd);
+      return field(modifier, 'apply_when_equipped_in_ability_effects_slot') === String(slotId)
+        && (!field(modifier, 'style') || field(modifier, 'style') === activeStyle);
+    })
+    .map((entry) => itemText.slice(entry.start, entry.end));
+}
+
+function appendAbilityEffectModifiers(itemText, modifiers) {
+  if (!modifiers.length) return itemText;
+  const open = itemText.indexOf('{');
+  const close = matchingBrace(itemText, open);
+  if (open < 0 || close < 0) return itemText;
+  const rootChildren = parseChildren(itemText, open + 1, close);
+  const visuals = block(rootChildren, 'visuals');
+  let current = itemText;
+  let existingVisualEntries = [];
+  if (visuals) existingVisualEntries = parseChildren(itemText, visuals.bodyStart, visuals.bodyEnd);
+  const usedNames = new Set(existingVisualEntries.map((entry) => entry.key.toLowerCase()));
+  const additions = [];
+  for (const raw of modifiers) {
+    const keyToken = readToken(raw, 0);
+    const originalKey = keyToken?.value || 'asset_modifier';
+    let key = originalKey;
+    if (usedNames.has(key.toLowerCase())) {
+      let number = 0;
+      do { key = `asset_modifier${number++}`; } while (usedNames.has(key.toLowerCase()));
+    }
+    usedNames.add(key.toLowerCase());
+    additions.push(`${raw.slice(0, keyToken.start)}"${key}"${raw.slice(keyToken.end)}`);
+  }
+  if (visuals) {
+    return `${current.slice(0, visuals.bodyEnd)}\n      ${additions.join('\n      ')}\n    ${current.slice(visuals.bodyEnd)}`;
+  }
+  return `${current.slice(0, close)}\n    "visuals" {\n      ${additions.join('\n      ')}\n    }\n  ${current.slice(close)}`;
+}
+
+function addAbilityEffectReplacements(text, nodes, prefabs, donor, selectedStyleId, wearableContent, replacements) {
+  const abilitySlots = staticAttributeValues(text, donor, prefabs, 'can_equip_as_ability_effects');
+  if (!abilitySlots.length) return;
+  const targets = new Map(nodes.flatMap((item) => {
+    if (field(item.children, 'prefab').toLowerCase() !== 'default_item') return [];
+    const slot = normalizedSlot(inheritedField(item.children, 'item_slot', prefabs));
+    const match = /^ability_effects_(\d+)$/.exec(slot);
+    return match ? [[match[1], item]] : [];
+  }));
+  for (const slotId of abilitySlots) {
+    const target = targets.get(slotId);
+    if (!target) continue;
+    const modifiers = abilityEffectModifiers(wearableContent, slotId, selectedStyleId);
+    if (!modifiers.length) continue;
+    const previous = replacements.get(target.id);
+    const targetText = previous?.content || text.slice(target.start, target.end);
+    replacements.set(target.id, {
+      ...(previous || {}),
+      id: target.id,
+      content: appendAbilityEffectModifiers(targetText, modifiers),
+      sourceId: donor.id,
+      sourceName: field(donor.children, 'name'),
+      abilityEffectSlot: slotId,
+    });
+  }
+}
+
 function buildCosmeticReplacements(text, selections = {}) {
   const nodes = itemNodes(text);
   const prefabs = prefabDefinitions(text);
@@ -586,7 +940,12 @@ function buildCosmeticReplacements(text, selections = {}) {
     if (!itemId) continue;
     const match = /^item:([a-z0-9_]+):([a-z0-9_]+)$/i.exec(slotId);
     if (!match) { errors.push(`Invalid cosmetic slot: ${slotId}`); continue; }
-    const [, hero, slot] = match;
+    const [, rawHero, slot] = match;
+    const hero = normalizeHeroKey(rawHero);
+    if (isUnsupportedMarsCompanionSlot(hero, slot)) {
+      errors.push('Mars does not support a pet, courier, or summon cosmetic slot.');
+      continue;
+    }
     const donor = byId.get(itemId);
     if (!donor) { errors.push(`Cosmetic item ${itemId} is not present in the installed game schema.`); continue; }
     const donorData = {
@@ -611,7 +970,9 @@ function buildCosmeticReplacements(text, selections = {}) {
     if (!base) { errors.push(`No default ${slot} item exists for ${heroDisplayName(hero)}.`); continue; }
     const baseName = field(base.children, 'name') || base.id;
     if (replacements.has(base.id)) { errors.push(`More than one selected skin targets ${baseName}.`); continue; }
-    replacements.set(base.id, { id: base.id, content: buildWearableBlock(text, donor, { id: base.id, name: baseName }, COSMETIC_EFFECT_BY_ID.has(effectId) ? effectId : '', styleOverrides), sourceId: donor.id, sourceName: donorData.name, styleId });
+    const wearableContent = buildWearableBlock(text, donor, { id: base.id, name: baseName }, COSMETIC_EFFECT_BY_ID.has(effectId) ? effectId : '', styleOverrides, prefabs);
+    replacements.set(base.id, { id: base.id, content: wearableContent, sourceId: donor.id, sourceName: donorData.name, styleId });
+    addAbilityEffectReplacements(text, nodes, prefabs, donor, styleId, wearableContent, replacements);
   }
   if (errors.length) throw new Error(errors.join(' '));
   return replacements;
@@ -624,7 +985,7 @@ function sanitizeCosmeticSelections(heroes, selections = {}) {
     if (!heroKey) continue;
     for (const slot of hero.slots || []) {
       const slotKey = normalizedSlot(String(slot?.id || '').split(':').at(-1));
-      if (!slotKey || slotKey === 'set') continue;
+      if (!slotKey || slotKey === 'set' || isUnsupportedMarsCompanionSlot(heroKey, slotKey)) continue;
       const id = `item:${heroKey}:${slotKey}`;
       const itemStyles = new Map();
       for (const option of slot.options || []) {
@@ -728,22 +1089,31 @@ function buildCosmeticListing(gamePath, picks = {}, language = 'english') {
   if (!gamePath) return { heroes: [], picks, error: 'Configure the Dota 2 path first.' };
   try {
     const data = readGameCosmeticData(gamePath, language);
-    return { heroes: describeItems(data.text, { localization: data.localization }), picks, error: null };
+    return {
+      heroes: describeItems(data.text, { localization: data.localization }),
+      globalSlots: describeGlobalCosmetics(data.text, { localization: data.localization }),
+      picks,
+      error: null,
+    };
   } catch (error) {
-    return { heroes: [], picks, error: error.message };
+    return { heroes: [], globalSlots: [], picks, error: error.message };
   }
 }
 
 module.exports = {
   SCHEMA_ENTRY,
   COSMETIC_EFFECTS,
+  GLOBAL_COSMETIC_CATEGORIES,
   buildCosmeticListing,
   buildCosmeticReplacements,
+  buildGlobalCosmeticReplacements,
   describeItems,
+  describeGlobalCosmetics,
   itemNodes,
   matchingBrace,
   parseChildren,
   readGameItems,
   readGameCosmeticData,
   sanitizeCosmeticSelections,
+  sanitizeGlobalCosmeticSelections,
 };
