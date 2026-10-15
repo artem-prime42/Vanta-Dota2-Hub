@@ -205,6 +205,33 @@ function closeAnimatedDialog(dialog, payload, resolve) {
   dialog.addEventListener('animationend', finish);
   setTimeout(finish, 220);
 }
+function showComingSoonDialog(section) {
+  const isRussian = state.data?.settings?.appLanguage === 'ru';
+  const sectionName = t(section === 'world' ? 'top.world' : 'top.interface', section);
+  const dialog = document.createElement('dialog');
+  dialog.className = 'app-modal-dialog coming-soon-dialog';
+  dialog.setAttribute('aria-labelledby', 'coming-soon-title');
+  dialog.setAttribute('aria-describedby', 'coming-soon-message');
+  dialog.innerHTML = `
+    <div class="app-modal-form coming-soon-form">
+      <span class="coming-soon-icon" aria-hidden="true">✦</span>
+      <p class="eyebrow coming-soon-kicker">VANTA · ${escapeHtml(sectionName)}</p>
+      <h2 id="coming-soon-title">${isRussian ? 'В разработке' : 'Under development'}</h2>
+      <p class="app-modal-message coming-soon-message" id="coming-soon-message">${isRussian
+        ? `Раздел «${escapeHtml(sectionName)}» появится в одном из следующих обновлений.`
+        : `The ${escapeHtml(sectionName)} section is coming in a future update.`}</p>
+      <div class="app-modal-actions coming-soon-actions">
+        <button type="button" class="action coming-soon-ok">${isRussian ? 'Ок' : 'OK'}</button>
+      </div>
+    </div>`;
+  const close = () => closeAnimatedDialog(dialog, undefined, () => {});
+  dialog.querySelector('.coming-soon-ok').addEventListener('click', close);
+  dialog.addEventListener('cancel', (event) => { event.preventDefault(); close(); });
+  dialog.addEventListener('click', (event) => { if (event.target === dialog) close(); });
+  document.body.appendChild(dialog);
+  dialog.showModal();
+  dialog.querySelector('.coming-soon-ok').focus({ preventScroll: true });
+}
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character])); }
 function showAppInputDialog({ title, message = '', label = '', value = '', placeholder = '', confirmLabel = t('common.save', 'Save'), cancelLabel = t('common.cancel', 'Cancel'), maxLength = 80, validate = () => '' }) {
   return new Promise((resolve) => {
@@ -650,7 +677,7 @@ function renderPatchNotesContent() {
   ];
   const list = sections.map((section, index) => `<article class="patch-notes-item"><span class="patch-notes-number">${index + 1}</span><div><h3>${section.title}</h3><ul>${section.bullets.map((bullet) => `<li>${bullet}</li>`).join('')}</ul></div></article>`).join('');
   const intro = isRussian ? 'Главное обновление системы скинов и управления модификациями.' : 'A major update to the skin system and mod management.';
-  return `<div class="patch-notes-banner"><span>VANTA UPDATE · 2.0.13</span></div><div class="patch-notes-body"><p class="eyebrow">${isRussian ? 'ЧТО НОВОГО' : 'WHAT’S NEW'}</p><h2 id="patch-notes-title">${isRussian ? 'Патчноут 2.0.13' : 'Patch notes 2.0.13'}</h2><p class="patch-notes-intro">${intro}</p><div class="patch-notes-list">${list}</div><div class="patch-notes-footer"><span>${isRussian ? 'Спасибо, что пользуетесь VANTA' : 'Thanks for using VANTA'}</span><b>VANTA · 2.0.13</b></div></div>`;
+  return `<div class="patch-notes-banner"><span>VANTA UPDATE · 2.0.14</span></div><div class="patch-notes-body"><p class="eyebrow">${isRussian ? 'ЧТО НОВОГО' : 'WHAT’S NEW'}</p><h2 id="patch-notes-title">${isRussian ? 'Патчноут 2.0.14' : 'Patch notes 2.0.14'}</h2><p class="patch-notes-intro">${intro}</p><div class="patch-notes-list">${list}</div><div class="patch-notes-footer"><span>${isRussian ? 'Спасибо, что пользуетесь VANTA' : 'Thanks for using VANTA'}</span><b>VANTA · 2.0.14</b></div></div>`;
 }
 function openPatchNotes() {
   const dialog = $('#patch-notes');
@@ -681,7 +708,7 @@ function closePatchNotes() {
   fallbackTimer = setTimeout(finish, 240);
 }
 function renderFeatured(mods) {
-  const patchNotesSlide = `<article class="featured-slide featured-patch-notes active" data-slide="0" style="--featured-image:url('https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/patchno.jpg')"><div class="featured-shade"></div><div class="featured-copy"><span class="featured-kicker">VANTA UPDATE · 2.0.13</span><h2>${patchNotesText('Патчноут 2.0.13', 'Patch notes 2.0.13')}</h2><p>${patchNotesText('10 500+ скинов, Unusual-эффекты и обновлённое управление модификациями.', '10,500+ skins, Unusual effects, and improved mod management.')}</p><div class="featured-actions"><button class="action patch-notes-open" data-open-patch-notes>${patchNotesText('Подробнее', 'Learn more')} <span aria-hidden="true">↗</span></button></div></div></article>`;
+  const patchNotesSlide = `<article class="featured-slide featured-patch-notes active" data-slide="0" style="--featured-image:url('https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/patchno.jpg')"><div class="featured-shade"></div><div class="featured-copy"><span class="featured-kicker">VANTA UPDATE · 2.0.14</span><h2>${patchNotesText('Патчноут 2.0.14', 'Patch notes 2.0.14')}</h2><p>${patchNotesText('10 500+ скинов, Unusual-эффекты и обновлённое управление модификациями.', '10,500+ skins, Unusual effects, and improved mod management.')}</p><div class="featured-actions"><button class="action patch-notes-open" data-open-patch-notes>${patchNotesText('Подробнее', 'Learn more')} <span aria-hidden="true">↗</span></button></div></div></article>`;
   return `<section class="featured" data-featured-index="0"><div class="featured-track">${patchNotesSlide}</div></section>`;
 }
 $('#close-patch-notes')?.addEventListener('click', closePatchNotes);
@@ -752,5 +779,8 @@ $('#play-game')?.addEventListener('click', async () => {
     const result = await call('game:play');
     if (!result.cancelled) toast(state.data?.settings?.appLanguage === 'ru' ? 'Запуск Dota 2 через Steam…' : 'Launching Dota 2 through Steam…');
   } catch (error) { toast(error.message); }
+});
+document.querySelectorAll('.top-tab[data-top="world"], .top-tab[data-top="interface"]').forEach((node) => {
+  node.onclick = () => showComingSoonDialog(node.dataset.top);
 });
 call('app:init').then((data) => { if (data && typeof data === 'object') { state.data = data; const playButton = $('#play-game'); if (playButton) playButton.hidden = !['win32', 'linux'].includes(state.data.platform); updateGameStatus(state.data.gamePath); } return loadCatalog(); }).catch(() => loadCatalog());

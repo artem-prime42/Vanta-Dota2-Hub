@@ -2,7 +2,7 @@
   "name": "vanta-dota",
   "productName": "VANTA",
   "desktopName": "vanta",
-  "version": "2.0.13",
+  "version": "2.0.14",
   "engines": {
     "node": ">=22.12.0"
   },

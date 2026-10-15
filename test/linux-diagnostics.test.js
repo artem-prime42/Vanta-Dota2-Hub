@@ -91,7 +91,7 @@ test('Linux diagnostic captures project-parser verification for primary Weather 
 
   const report = await collectLinuxDiagnostic({
     service,
-    appVersion: '2.0.13',
+    appVersion: '2.0.14',
     steamRootsOverride: [],
     runningSteamClientsOverride: [],
     processDiagnosticsOverride: {
@@ -116,7 +116,7 @@ test('Linux diagnostic captures project-parser verification for primary Weather 
     },
   });
   const { weatherTowersVpk, gameinfoValidation, signaturesValidation } = report.game;
-  assert.equal(report.vantaVersion, '2.0.13');
+  assert.equal(report.vantaVersion, '2.0.14');
   assert.equal(report.runningDotaDetected, 'NO');
   assert.equal(report.runningDotaExecutable, 'UNKNOWN');
   assert.equal(report.runningDotaPathNormalized, 'UNKNOWN');

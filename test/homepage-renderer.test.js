@@ -18,9 +18,9 @@ test('home route renders the featured slider instead of the Dota and mod health 
   assert.doesNotMatch(renderer, /renderDotaStatus|library:diagnose/);
 });
 
-test('2.0.13 patch note, landscape category, and hero preview UI are present', () => {
-  assert.match(renderer, /VANTA UPDATE · 2\.0\.13/);
-  assert.match(renderer, /Патчноут 2\.0\.13/);
+test('2.0.14 patch note, landscape category, and hero preview UI are present', () => {
+  assert.match(renderer, /VANTA UPDATE · 2\.0\.14/);
+  assert.match(renderer, /Патчноут 2\.0\.14/);
   assert.match(renderer, /Полностью переработана система скинов/);
   assert.match(renderer, /10 500\+ скинов/);
   assert.match(renderer, /Unusual-эффекты/);
