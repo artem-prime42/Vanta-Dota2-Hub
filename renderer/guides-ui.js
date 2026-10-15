@@ -3,27 +3,33 @@ const GUIDE_CONTENT = [
     id: 'install',
     title: { ru: 'Как устанавливать моды', en: 'How to install mods' },
     steps: {
-      ru: ['Откройте вкладку «Моды» и выберите нужный раздел.', 'Найдите мод через поиск или откройте страницу героя.', 'Укажите путь к Dota 2 в Настройках, если игра не найдена автоматически.', 'Откройте карточку мода и нажмите «Установить». Менеджер скачает архив и разместит VPK в папке языка Dota 2.', 'Запустите Dota 2 с тем же языком, который выбран в настройках VANTA.', 'После установки мод появится в Библиотеке: его можно включить, отключить, удалить или объединить.'],
-      en: ['Open Mods and choose a section.', 'Find a mod with search or open a hero page.', 'Set the Dota 2 path in Settings if the game was not detected automatically.', 'Open the mod card and click Install. The manager downloads the archive and places the VPK in the Dota 2 language folder.', 'Launch Dota 2 with the same language selected in VANTA.', 'After installation the mod appears in Library, where it can be enabled, disabled, removed, or merged.'],
+      ru: ['Откройте «Моды» и выберите категорию «Герои» в верхней панели.', 'Найдите героя и откройте его страницу: обычные моды и предметы из локальных файлов Dota 2 находятся в одной сетке и фильтруются общими слотами.', 'Нажмите карточку локального предмета, чтобы выбрать его; выбранные предметы отмечаются на карточках.', 'Укажите путь к Dota 2 в Настройках, если игра не найдена автоматически. Для первого применения подтвердите настройку загрузчика; Dota 2 должна быть закрыта.', 'Нажмите «Применить образ». Чтобы убрать выбранные предметы, нажмите «Сбросить образ».'],
+      en: ['Open Mods and choose the Heroes category in the top bar.', 'Find a hero and open its page: regular mods and items from local Dota 2 files share one grid and the same slot filters.', 'Click a local item card to select it; selected items are marked on their cards.', 'Set the Dota 2 path in Settings if the game was not detected automatically. For the first apply, confirm loader setup; Dota 2 must be closed.', 'Click Apply loadout. Use Reset loadout to remove the selected items.'],
+    },
+  },
+  {
+    id: 'categories',
+    title: { ru: 'Категории модов и страница героя', en: 'Mod categories and hero pages' },
+    steps: {
+      ru: ['В верхней панели откройте «Герои», «Мир» или «Интерфейс». Поиск доступен в категориях «Мир» и «Интерфейс».', 'В категории «Герои» выберите героя, чтобы увидеть обычные моды и доступные локальные предметы вместе.', 'Фильтры слотов и строка поиска на странице героя применяются к обоим типам карточек.', 'Выбор локального предмета не устанавливает отдельный архив: отметьте нужные карточки и примените образ внизу сетки.'],
+      en: ['Choose Heroes, World, or Interface from the top bar. Search is available in World and Interface.', 'In Heroes, open a hero to see regular mods and available local items together.', 'The hero page slot filters and search apply to both types of cards.', 'Selecting a local item does not install a separate archive: choose the cards you want and apply the loadout below the grid.'],
     },
   },
   {
     id: 'workflow',
     title: { ru: 'Как работает менеджер', en: 'How the manager works' },
     steps: {
-      ru: ['Каталог загружает описания, превью, ссылки и метаданные. Файлы устанавливаются только после нажатия «Установить».', 'Библиотека хранит манифест каждого установленного мода и список его файлов.', 'Обычный VPK получает свободное имя pakXX_dir.vpk.', 'При отключении файл временно переименовывается, а при включении возвращается к исходному имени.', 'Пак объединяет несколько VPK в один файл и сохраняет список модов внутри.', 'Если мод не работает, проверьте путь к игре, язык Dota 2 и конфликты файлов.'],
-      en: ['The Catalog loads descriptions, previews, links, and metadata. Files are installed only after you click Install.', 'Library stores a manifest and file list for every installed mod.', 'A regular VPK receives a free pakXX_dir.vpk name.', 'When disabled, a file is temporarily renamed; when enabled, its original name is restored.', 'A pack combines several VPK files and stores its member list.', 'If a mod does not work, check the game path, Dota 2 language, and file conflicts.'],
+      ru: ['В верхней панели раздела «Моды» доступны категории «Герои», «Мир» и «Интерфейс»; поиск работает в категориях «Мир» и «Интерфейс».', 'На странице героя обычные моды и предметы из локальных файлов игры отображаются в общей сетке с общими фильтрами.', 'Библиотека показывает установленные VPK-файлы, их состояние, порядок загрузки и внешние файлы.', 'При отключении управляемый VPK временно переименовывается; включение возвращает его в папку игры.', 'Пак объединяет выбранные VPK в один файл; его состав можно открыть из Библиотеки.', 'Если мод не работает, проверьте путь к игре, язык Dota 2, состояние мода и конфликты файлов.'],
+      en: ['The Mods top bar provides Heroes, World, and Interface; search is available in World and Interface.', 'Hero pages show regular mods and items from local game files together in one grid with shared filters.', 'Library lists installed VPK files, their state, load order, and external files.', 'Disabling a managed VPK temporarily renames it; enabling it restores it to the game folder.', 'A pack combines selected VPK files; you can inspect its contents from Library.', 'If a mod does not work, check the game path, Dota 2 language, mod state, and file conflicts.'],
     },
   },
   {
     id: 'matchmaking',
     title: { ru: 'Не пускает в поиск матча', en: 'Cannot enter matchmaking' },
     steps: {
-      ru: ['Полностью закройте Dota 2. Steam можно оставить открытым.', 'На Windows скачайте FixMatchMaking.bat по ссылке ниже и запустите его от имени пользователя.', 'После выполнения скрипта снова проверьте поиск матча.', 'Если проблема осталась, перезапустите Steam, проверьте целостность файлов и временно отключите конфликтующие моды.', 'Важно: этот способ предназначен только для Windows.'],
-      en: ['Fully close Dota 2. Steam can remain open.', 'On Windows download FixMatchMaking.bat using the link below and run it as your user.', 'After the script finishes, test matchmaking again.', 'If the issue remains, restart Steam, verify the game files, and temporarily disable conflicting mods.', 'Important: this workaround is for Windows only.'],
+      ru: ['Полностью закройте Dota 2. Steam можно оставить открытым.', 'В Windows нажмите «Играть» в VANTA: встроенный сценарий исправит matchmaking и запустит Dota 2 через Steam.', 'Сценарий проверяет загружаемый файл и не открывает рекламные сайты.', 'Если поиск не заработал, перезапустите Steam, проверьте целостность файлов игры и временно отключите конфликтующие моды.'],
+      en: ['Fully close Dota 2. Steam can remain open.', 'On Windows, click Play in VANTA. Its bundled script repairs matchmaking and launches Dota 2 through Steam.', 'The script verifies its downloaded patch and does not open advertising websites.', 'If matchmaking still does not work, restart Steam, verify the game files, and temporarily disable conflicting mods.'],
     },
-    link: 'https://github.com/artem-prime42/dota2-mods/releases/download/295/FixMatchMaking.bat',
-    linkLabel: { ru: 'Скачать FixMatchMaking.bat', en: 'Download FixMatchMaking.bat' },
   },
   {
     id: 'pack',
@@ -39,38 +45,6 @@ const GUIDE_CONTENT = [
     steps: {
       ru: ['Откройте Библиотеку и выберите минимум два мода.', 'Нажмите «Объединить моды», введите название и подтвердите создание.', 'Менеджер объединит VPK, назначит свободное имя pakXX_dir.vpk и сохранит состав пака.'],
       en: ['Open Library and select at least two mods.', 'Click Merge mods, enter a name, and confirm creation.', 'The manager merges the VPK files, assigns a free pakXX_dir.vpk name, and saves the pack contents.'],
-    },
-  },
-  {
-    id: 'save-pack',
-    title: { ru: 'Как сохранить пак', en: 'How to save a pack' },
-    steps: {
-      ru: ['Найдите созданный пак в Библиотеке.', 'Сохраните его через управление паком, чтобы копия VPK и состав остались в хранилище VANTA.', 'Сохранённый пак останется доступен после перезапуска приложения.'],
-      en: ['Find the created pack in Library.', 'Save it through pack management so the VPK copy and member list remain in VANTA storage.', 'The saved pack remains available after restarting the app.'],
-    },
-  },
-  {
-    id: 'restore-pack',
-    title: { ru: 'Восстановление и активация', en: 'Restore and activate' },
-    steps: {
-      ru: ['Откройте сохранённые паки в Библиотеке.', 'Активируйте пак, чтобы восстановить отсутствующий VPK в папке языка Dota 2.', 'Для отключённого пака активация снова включит его файл.', 'При восстановлении назначается новое свободное имя, поэтому файлы не перезаписываются.'],
-      en: ['Open saved packs in Library.', 'Activate a pack to restore its missing VPK to the Dota 2 language folder.', 'For a disabled pack, activation enables its file again.', 'Restoration uses a new free filename, so existing files are not overwritten.'],
-    },
-  },
-  {
-    id: 'manage-pack',
-    title: { ru: 'Управление паком', en: 'Manage a pack' },
-    steps: {
-      ru: ['Просмотрите состав пака, чтобы увидеть входящие моды.', 'Переименуйте пак, если нужно изменить его название.', 'Удаление сохранённой копии не удаляет установленный VPK.', 'Чтобы полностью удалить установленный пак, используйте удаление в Библиотеке.'],
-      en: ['View a pack contents to see its member mods.', 'Rename the pack when you need a different name.', 'Deleting a saved copy does not remove an installed VPK.', 'To remove an installed pack completely, use Remove in Library.'],
-    },
-  },
-  {
-    id: 'pack-catalog',
-    title: { ru: 'Паки и каталог', en: 'Packs and the Catalog' },
-    steps: {
-      ru: ['Когда пак установлен и включён, моды из его состава получают отметку «Установлено».', 'После отключения или удаления пака отметки исчезают после обновления библиотеки.', 'Сохранённый, но не активированный пак не помечает моды установленными.'],
-      en: ['When a pack is installed and enabled, its member mods receive an Installed mark.', 'After disabling or removing a pack, marks disappear after the library is refreshed.', 'A saved but inactive pack does not mark mods as installed.'],
     },
   },
   {

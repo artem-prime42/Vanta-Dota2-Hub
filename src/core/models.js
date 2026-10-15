@@ -28,8 +28,9 @@ function heroDisplayName(value) {
 }
 
 function normalizeHeroKey(value) {
-  const raw = String(value ?? '').trim().toLowerCase();
+  let raw = String(value ?? '').trim().toLowerCase();
   if (!raw) return null;
+  raw = raw.replace(/^npc_dota_hero_/, '');
   if (/^\d+$/.test(raw)) return heroKeyFromId(raw) || null;
   const aliasMap = {
     'anti mage': 'anti_mage', 'anti-mage': 'anti_mage', antimage: 'anti_mage',
@@ -37,9 +38,9 @@ function normalizeHeroKey(value) {
     'outworld devourer': 'outworld_devourer', 'outworld-devourer': 'outworld_devourer', 'outworld destroyer': 'outworld_devourer', 'outworld-destroyer': 'outworld_devourer', outworld_destroyer: 'outworld_devourer', 'obsidian destroyer': 'outworld_devourer', 'obsidian-destroyer': 'outworld_devourer', obsidian_destroyer: 'outworld_devourer',
     'queen of pain': 'queen_of_pain', 'queen-of-pain': 'queen_of_pain', queenofpain: 'queen_of_pain',
     'shadow fiend': 'shadow_fiend', 'shadow-fiend': 'shadow_fiend', nevermore: 'shadow_fiend',
-    'treant protector': 'treant_protector', 'treant-protector': 'treant_protector',
+    'treant': 'treant_protector', 'treant protector': 'treant_protector', 'treant-protector': 'treant_protector',
     'vengeful spirit': 'vengeful_spirit', 'vengeful-spirit': 'vengeful_spirit', vengefulspirit: 'vengeful_spirit',
-    'windranger': 'windranger', windrunner: 'windranger',
+    'windranger': 'windranger', windrunner: 'windranger', abyssal_underlord: 'underlord', abyssalunderlord: 'underlord', antimage: 'anti_mage', zuus: 'zeus', necrolyte: 'necrophos', skeleton_king: 'wraith_king', doom_bringer: 'doom',
     'rattletrap': 'clockwerk', wisp: 'io', 'life stealer': 'lifestealer', 'life-stealer': 'lifestealer', life_stealer: 'lifestealer', magnataur: 'magnus', 'abyssal underlord': 'underlord', 'abyssal-underlord': 'underlord', shredder: 'timbersaw', 'obsidian destroyer': 'outworld_devourer',
   };
   const direct = aliasMap[raw];
@@ -51,7 +52,9 @@ function normalizeHeroKey(value) {
 
 function normalizeMod(raw, index = 0) {
   const name = String(raw?.name || raw?.title || `Mod ${index + 1}`).trim();
-  const hero = normalizeHeroKey(raw?.hero || raw?.heroId || raw?.heroName || raw?.heroLabel);
+  const rawHeroes = [raw?.hero, raw?.heroId, raw?.heroName, raw?.heroLabel, ...(Array.isArray(raw?.heroes) ? raw.heroes : []), ...(Array.isArray(raw?.heroIds) ? raw.heroIds : [])];
+  const heroes = [...new Set(rawHeroes.map((value) => normalizeHeroKey(value && typeof value === 'object' ? value.hero || value.heroId || value.key || value.name : value)).filter(Boolean))];
+  const hero = normalizeHeroKey(raw?.hero || raw?.heroId || raw?.heroName || raw?.heroLabel) || heroes[0] || null;
   return {
     id: stableModId(raw),
     name,
@@ -61,6 +64,7 @@ function normalizeMod(raw, index = 0) {
     downloadUrl: raw?.file || raw?.download_url || raw?.downloadUrl || raw?.url || null,
     categoryId: String(raw?.categoryId || raw?.category || 'other'),
     hero,
+    heroes,
     heroLabel: raw?.heroLabel || (hero ? hero.replace(/_/g, ' ') : null),
     slot: raw?.slot || null,
     tags: Array.isArray(raw?.tags) ? raw.tags.map(String) : raw?.tags && typeof raw.tags === 'object' ? Object.entries(raw.tags).filter(([, value]) => value).map(([key]) => key) : [],
@@ -147,12 +151,13 @@ function searchMods(mods, query, filters = {}) {
   const needle = String(query || '').trim().toLowerCase();
   const heroFilter = normalizeHeroKey(filters.hero);
   return mods.filter((mod) => {
-    const haystack = [mod.name, mod.author, mod.categoryId, mod.heroLabel, ...mod.tags].join(' ').toLowerCase();
+    const tags = Array.isArray(mod.tags) ? mod.tags : typeof mod.tags === 'string' ? [mod.tags] : [];
+    const haystack = [mod.name, mod.author, mod.categoryId, mod.heroLabel, ...tags].join(' ').toLowerCase();
     if (needle && !haystack.includes(needle)) return false;
     if (filters.category && filters.category !== 'all' && mod.categoryId !== filters.category) return false;
-    if (heroFilter && mod.hero !== heroFilter) return false;
+    if (heroFilter && mod.hero !== heroFilter && !(Array.isArray(mod.heroes) && mod.heroes.includes(heroFilter))) return false;
     return true;
   });
 }
 
-module.exports = { CANONICAL_HERO_IDS, HERO_ID_TO_KEY, heroKeyFromId, heroDisplayName, flattenCatalog, normalizeAuthor, normalizeMod, searchMods, stableModId, validateSpecialPatch };
+module.exports = { CANONICAL_HERO_IDS, HERO_ID_TO_KEY, heroKeyFromId, heroDisplayName, flattenCatalog, normalizeAuthor, normalizeHeroKey, normalizeMod, searchMods, stableModId, validateSpecialPatch };

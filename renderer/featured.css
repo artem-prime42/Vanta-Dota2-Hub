@@ -47,6 +47,9 @@
 .patch-notes-number { display: grid; place-items: center; width: 31px; height: 31px; border: 1px solid #ffffff20; border-radius: 8px; color: #ddd; background: #ffffff08; font: 600 11px 'Space Grotesk'; }
 .patch-notes-item h3 { margin: 1px 0 6px; font: 600 14px 'Space Grotesk'; }
 .patch-notes-item p { margin: 0; color: #a1a1a1; font-size: 12px; line-height: 1.55; }
+.patch-notes-item ul { display: grid; gap: 4px; margin: 0; padding-left: 17px; color: #a1a1a1; font-size: 12px; line-height: 1.55; }
+.patch-notes-item li::marker { color: var(--accent); }
+.patch-notes-item strong { color: #dedede; font-weight: 600; }
 .patch-notes-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 20px; padding-top: 15px; border-top: 1px solid #292929; color: var(--muted); font-size: 11px; }
 .patch-notes-footer b { color: #ddd; font-size: 10px; letter-spacing: .08em; }
 @media (max-width: 780px) { .patch-notes-dialog { max-height: 90vh; }.patch-notes-banner { height: 76px; padding: 0 20px 13px; }.patch-notes-body { padding: 17px 20px 20px; } }

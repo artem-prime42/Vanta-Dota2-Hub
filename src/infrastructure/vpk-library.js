@@ -17,13 +17,32 @@ class VpkLibrary {
   constructor({ rootDir, storage }) {
     this.rootDir = rootDir;
     this.storage = storage;
-    this.directory = path.join(rootDir, 'database', 'library');
+    this.directory = path.join(rootDir, 'VantaMods', 'packages');
+    this.stagingDirectory = path.join(rootDir, 'VantaMods', 'staging');
+    this.backupsDirectory = path.join(rootDir, 'VantaMods', 'backups');
+    this.manifestsDirectory = path.join(rootDir, 'VantaMods', 'manifests');
+    this.legacyDirectory = path.join(rootDir, 'database', 'library');
     this.lockFile = path.join(this.directory, '.pak-allocation.lock');
     this.queue = Promise.resolve();
   }
 
   async init() {
-    await fs.mkdir(this.directory, { recursive: true });
+    await Promise.all([this.directory, this.stagingDirectory, this.backupsDirectory, this.manifestsDirectory].map((directory) => fs.mkdir(directory, { recursive: true })));
+    await this.copyLegacyDirectory(this.legacyDirectory, this.directory);
+    await this.copyLegacyDirectory(path.join(this.rootDir, 'database', 'manifests'), this.manifestsDirectory);
+  }
+
+  async copyLegacyDirectory(source, destination) {
+    let entries;
+    try { entries = await fs.readdir(source, { withFileTypes: true }); }
+    catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const sourcePath = path.join(source, entry.name);
+      const destinationPath = path.join(destination, entry.name);
+      try { await fs.copyFile(sourcePath, destinationPath, require('node:fs').constants.COPYFILE_EXCL); }
+      catch (error) { if (error.code !== 'EEXIST') throw error; }
+    }
   }
 
   async exists(file) {

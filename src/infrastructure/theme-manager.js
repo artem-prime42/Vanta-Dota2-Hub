@@ -327,9 +327,7 @@ class ThemeManager {
     this.fallbackThemeId = fallbackThemeId;
     this.activeThemeId = activeThemeId || fallbackThemeId;
     this.themes = new Map();
-    this.catalogThemes = new Map();
     this.backgroundImageUrls = new Map();
-    this.pendingActiveThemeId = null;
     this.stateFile = path.join(this.themesDir, 'active-theme.json');
   }
 
@@ -411,73 +409,14 @@ class ThemeManager {
       const persisted = JSON.parse(file);
       if (persisted && persisted.activeThemeId) {
         const persistedId = sanitizeThemeId(persisted.activeThemeId);
-        if (this.themes.has(persistedId) || this.catalogThemes.has(persistedId)) this.activeThemeId = persistedId;
-        else {
-          this.pendingActiveThemeId = persistedId;
-          this.activeThemeId = this.fallbackThemeId;
-        }
+        this.activeThemeId = this.themes.has(persistedId) ? persistedId : this.fallbackThemeId;
       }
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
-    if (!this.pendingActiveThemeId) {
-      this.activeThemeId = this.resolveThemeId(this.activeThemeId);
-      await this.persistActiveTheme();
-    }
+    this.activeThemeId = this.resolveThemeId(this.activeThemeId);
+    await this.persistActiveTheme();
     return this.activeThemeId;
-  }
-
-  isAllowedCatalogPreviewUrl(value) {
-    try {
-      const url = new URL(String(value || ''));
-      return url.protocol === 'https:' && url.hostname === 'raw.githubusercontent.com'
-        && (/^\/artem-prime42\/dota2-mod-manager-catalog\/main\/themes\/[a-z0-9_-]+\/preview\.(?:png|jpe?g|webp)$/i.test(url.pathname)
-          || /^\/artem-prime42\/dota2-media\/main\/images\/[^/]+\.(?:png|jpe?g|webp)$/i.test(url.pathname));
-    } catch { return false; }
-  }
-
-  isAllowedCatalogThemeDownloadUrl(value) {
-    try {
-      const url = new URL(String(value || ''));
-      return url.protocol === 'https:' && url.hostname === 'github.com'
-        && /^\/artem-prime42\/dota2-mods\/releases\/download\/[^/]+\/[^/]+\.zip$/i.test(url.pathname)
-        ? url.href
-        : null;
-    } catch { return null; }
-  }
-
-  async setCatalogThemes(items = []) {
-    const next = new Map();
-    const occupied = new Set(this.themes.keys());
-    for (const raw of Array.isArray(items) ? items : []) {
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
-      const catalogPreviewUrl = this.isAllowedCatalogPreviewUrl(raw.previewUrl) ? raw.previewUrl : null;
-      const downloadUrl = this.isAllowedCatalogThemeDownloadUrl(raw.downloadUrl || raw.file);
-      const candidate = { ...raw };
-      delete candidate.previewUrl;
-      delete candidate.catalogPreviewUrl;
-      delete candidate.downloadUrl;
-      delete candidate.file;
-      delete candidate.createdAt;
-      delete candidate.downloads;
-      delete candidate.modType;
-      delete candidate.categoryId;
-      if (candidate.background?.image) continue;
-      if (catalogPreviewUrl && !candidate.preview) candidate.preview = undefined;
-      const candidateId = sanitizeThemeId(candidate.id);
-      const occupiedIds = new Set([...occupied].filter((id) => id !== candidateId));
-      const validation = this.validateTheme(candidate, new Set([...occupiedIds, ...next.keys()]));
-      if (!validation.valid) continue;
-      const theme = { ...validation.theme, source: 'catalog', catalogPreviewUrl, downloadUrl };
-      next.set(theme.id, theme);
-    }
-    this.catalogThemes = next;
-    if (this.pendingActiveThemeId && this.catalogThemes.has(this.pendingActiveThemeId)) {
-      this.activeThemeId = this.pendingActiveThemeId;
-      this.pendingActiveThemeId = null;
-      await this.persistActiveTheme();
-    }
-    return this.getThemes();
   }
 
   async persistActiveTheme() {
@@ -489,12 +428,12 @@ class ThemeManager {
   resolveThemeId(themeId) {
     const next = sanitizeThemeId(themeId);
     if (!this.themes || !this.themes.size) return this.fallbackThemeId;
-    return this.themes.has(next) || this.catalogThemes.has(next) ? next : this.fallbackThemeId;
+    return this.themes.has(next) ? next : this.fallbackThemeId;
   }
 
   getTheme(themeId) {
     const resolved = this.resolveThemeId(themeId);
-    return this.themes.get(resolved) || this.catalogThemes.get(resolved) || this.themes.get(this.fallbackThemeId) || normalizeTheme(DEFAULT_THEME, this.themes.keys());
+    return this.themes.get(resolved) || this.themes.get(this.fallbackThemeId) || normalizeTheme(DEFAULT_THEME, this.themes.keys());
   }
 
   getActiveTheme() {
@@ -510,15 +449,12 @@ class ThemeManager {
   }
 
   getThemes() {
-    const themes = [
-      ...this.themes.values(),
-      ...[...this.catalogThemes.entries()].filter(([id]) => !this.themes.has(id)).map(([, theme]) => theme),
-    ];
+    const themes = [...this.themes.values()];
     return themes.sort((left, right) => left.name.localeCompare(right.name)).map((theme) => ({
       ...theme,
       background: { ...theme.background, imageUrl: this.backgroundImageUrls.get(theme.id) || null },
-      source: BUNDLED_THEME_IDS.has(theme.id) ? 'builtin' : (this.themes.has(theme.id) ? 'local' : 'catalog'),
-      preview: this.catalogThemes.get(theme.id)?.catalogPreviewUrl || theme.catalogPreviewUrl || theme.preview || buildThemePreview(theme),
+      source: BUNDLED_THEME_IDS.has(theme.id) ? 'builtin' : 'local',
+      preview: theme.preview || buildThemePreview(theme),
     }));
   }
 
@@ -527,8 +463,8 @@ class ThemeManager {
     return {
       ...theme,
       background: { ...theme.background, imageUrl: this.backgroundImageUrls.get(theme.id) || null },
-      preview: this.catalogThemes.get(theme.id)?.catalogPreviewUrl || theme.catalogPreviewUrl || theme.preview || buildThemePreview(theme),
-      source: BUNDLED_THEME_IDS.has(theme.id) ? 'builtin' : (this.themes.has(theme.id) ? 'local' : 'catalog'),
+      preview: theme.preview || buildThemePreview(theme),
+      source: BUNDLED_THEME_IDS.has(theme.id) ? 'builtin' : 'local',
     };
   }
 
@@ -694,7 +630,6 @@ class ThemeManager {
     const resolved = this.resolveThemeId(themeId);
     this.activeThemeId = resolved;
     if (persist) {
-      this.pendingActiveThemeId = null;
       await this.persistActiveTheme();
     }
     return this.getActiveTheme();
@@ -793,7 +728,6 @@ class ThemeManager {
 
   async removeTheme(themeId) {
     const resolved = sanitizeThemeId(themeId);
-    if (this.catalogThemes.has(resolved) && !this.themes.has(resolved)) throw new Error('Catalog themes cannot be removed from the local theme store.');
     if (!resolved || BUNDLED_THEME_IDS.has(resolved)) {
       throw new Error('Built-in themes cannot be removed');
     }

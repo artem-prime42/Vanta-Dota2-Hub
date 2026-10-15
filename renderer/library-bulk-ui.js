@@ -13,21 +13,12 @@ function syncLibraryBulkUi() {
   panel.classList.toggle('has-selection', selectedCount > 0);
   let count = panel.querySelector('.floating-selection-count');
   if (!count) {
-    panel.insertAdjacentHTML('afterbegin', '<button class="floating-selection-cancel" title="Cancel selection" aria-label="Cancel selection">×</button><span class="floating-selection-count"></span>');
+    panel.insertAdjacentHTML('afterbegin', `<button class="floating-selection-cancel" title="${t('catalog.cancelSelection', 'Cancel selection')}" aria-label="${t('catalog.cancelSelection', 'Cancel selection')}">×</button><span class="floating-selection-count"></span>`);
     panel.querySelector('.floating-selection-cancel').onclick = () => { state.librarySelection.clear(); renderLibrary(); };
-    panel.insertAdjacentHTML('beforeend', '<button class="action secondary floating-merge">Merge mods</button>');
-    panel.querySelector('.floating-merge').onclick = async () => {
-      const managed = [...state.librarySelection].filter((id) => !id.startsWith('external:'));
-      if (managed.length < 2) return toast('Select at least two managed mods to create a pack.');
-      openMergePackDialog(managed);
-    };
     count = panel.querySelector('.floating-selection-count');
   }
-  count.textContent = `${selectedCount} selected`;
+  count.textContent = formatTranslation(t('catalog.selectedCount', '{count} selected'), { count: selectedCount });
   panel.querySelectorAll('.action').forEach((button) => { button.disabled = selectedCount === 0; });
-    const managedCount = [...state.librarySelection].filter((id) => !id.startsWith('external:')).length;
-    const merge = panel.querySelector('.floating-merge');
-    if (merge) merge.disabled = managedCount < 2;
 }
 
 function openMergePackDialog(ids) {
@@ -69,7 +60,10 @@ function showPackProgress(event) {
     document.body.appendChild(panel);
   }
   const percent = Number.isFinite(Number(event.percent)) ? Math.max(0, Math.min(100, Number(event.percent))) : null;
-  panel.innerHTML = `<strong>${event.state === 'failed' ? 'Pack creation failed' : event.state === 'completed' ? 'Pack created' : 'Creating pack'}</strong><span class="pack-progress-phase">${libraryEscape(event.phase || 'Working...')}</span>${percent === null ? '' : `<div class="pack-progress-track"><span style="width:${percent}%"></span></div><small>${Math.round(percent)}%</small>`}`;
+  const title = event.state === 'failed' ? 'Pack creation failed' : event.state === 'completed' ? 'Pack created' : 'Creating pack';
+  const localizedTitle = window.i18n?.localizeToast?.(title) || title;
+  const phase = window.i18n?.localizeToast?.(event.phase || 'Working...') || event.phase || 'Working...';
+  panel.innerHTML = `<strong>${libraryEscape(localizedTitle)}</strong><span class="pack-progress-phase">${libraryEscape(phase)}</span>${percent === null ? '' : `<div class="pack-progress-track"><span style="width:${percent}%"></span></div><small>${Math.round(percent)}%</small>`}`;
   if (event.state === 'completed' || event.state === 'failed') setTimeout(() => panel.remove(), 3500);
 }
 

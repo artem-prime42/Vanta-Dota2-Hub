@@ -36,6 +36,62 @@ test('download manager reports unknown content length without inventing a percen
   assert.equal(progress.at(-1).state, 'downloaded');
 });
 
+test('download manager coalesces concurrent requests for the same mod and URL', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-download-coalesce-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  let requests = 0;
+  const manager = new DownloadManager(root, undefined, [], async () => {
+    requests += 1;
+    await new Promise((resolve) => setImmediate(resolve));
+    return new Response('same package');
+  });
+
+  const [first, second] = await Promise.all([
+    manager.download('shared-mod', 'https://example.test/shared.zip'),
+    manager.download('shared-mod', 'https://example.test/shared.zip'),
+  ]);
+
+  assert.equal(first, second);
+  assert.equal(requests, 1);
+  assert.equal(await fs.readFile(first, 'utf8'), 'same package');
+});
+
+test('download manager serializes different URLs that share one mod ID', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-download-serialize-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const requests = [];
+  const manager = new DownloadManager(root, undefined, [], async (url) => {
+    requests.push(url);
+    await new Promise((resolve) => setImmediate(resolve));
+    return new Response(url.endsWith('second.zip') ? 'second package' : 'first package');
+  });
+
+  const first = manager.download('shared-mod', 'https://example.test/first.zip');
+  const second = manager.download('shared-mod', 'https://example.test/second.zip');
+  const [firstPath, secondPath] = await Promise.all([first, second]);
+
+  assert.equal(firstPath, secondPath);
+  assert.deepEqual(requests, ['https://example.test/first.zip', 'https://example.test/second.zip']);
+  assert.equal(await fs.readFile(secondPath, 'utf8'), 'second package');
+  assert.equal(await fs.readFile(`${secondPath}.url`, 'utf8'), 'https://example.test/second.zip');
+});
+
+test('download manager discards failed-verification cache only for the matching source URL', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-download-discard-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const manager = new DownloadManager(root);
+  const archive = path.join(root, 'downloads', 'verified-mod.zip');
+  await fs.mkdir(path.dirname(archive), { recursive: true });
+  await fs.writeFile(archive, 'bad bytes');
+  await fs.writeFile(`${archive}.url`, 'https://example.test/current.zip');
+
+  assert.equal(await manager.discardCachedArchive('verified-mod', 'https://example.test/old.zip'), false);
+  assert.equal(await fs.readFile(archive, 'utf8'), 'bad bytes');
+  assert.equal(await manager.discardCachedArchive('verified-mod', 'https://example.test/current.zip'), true);
+  await assert.rejects(fs.access(archive));
+  await assert.rejects(fs.access(`${archive}.url`));
+});
+
 test('download manager reuses and clears saved archives', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-downloads-'));
   const manager = new DownloadManager(root);
@@ -75,6 +131,21 @@ test('download manager clears archives from legacy roots', async () => {
   await assert.rejects(fs.access(path.join(secondLegacyRoot, 'downloads', 'second-legacy.zip')));
   const clearedStats = await manager.getStats();
   assert.deepEqual({ count: clearedStats.count, bytes: clearedStats.bytes }, { count: 0, bytes: 0 });
+});
+
+test('download manager waits for active transfers to stop before clearing archives', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-download-clear-active-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const manager = new DownloadManager(root, undefined, [], (_url, { signal }) => new Promise((resolve, reject) => {
+    signal.addEventListener('abort', () => reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })), { once: true });
+  }));
+  const pending = manager.download('active-mod', 'https://example.test/active.zip').catch(() => {});
+  await new Promise((resolve) => setImmediate(resolve));
+
+  await manager.clear();
+  await pending;
+
+  assert.deepEqual(await fs.readdir(path.join(root, 'downloads')), []);
 });
 
 test('download manager lists archives and deletes only the selected archive and source URL', async () => {

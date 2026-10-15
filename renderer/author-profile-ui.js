@@ -1,7 +1,7 @@
 const AUTHOR_MOD_CATEGORY_GROUPS = {
-  heroes: new Set(['heroes', 'hero-items', 'herofx', 'hero-sounds']),
+  heroes: new Set(['heroes', 'hero-items', 'herofx']),
   world: new Set(['terrains', 'trees', 'river', 'creeps', 'towers', 'weather', 'roshan', 'ancient', 'tormentor', 'wards', 'couriers', 'pedestal', 'creep-deny']),
-  interface: new Set(['backgrounds', 'huds', 'emblems', 'versus-screens', 'item-icons', 'ranks', 'pings', 'cursors', 'announcers', 'music', 'mega-kill']),
+  interface: new Set(['backgrounds', 'huds', 'emblems', 'versus-screens', 'item-icons', 'ranks', 'pings', 'cursors', 'fonts', 'announcers', 'music', 'mega-kill', 'hero-sounds', 'item-sounds', 'sounds', 'parts']),
   effects: new Set(['shaders', 'ti-bp-effects', 'item-effects', 'ranged-attack', 'high-five']),
   other: new Set(['other', 'sites', 'sounds', 'optimization', 'packs']),
   themes: new Set(['theme', 'themes']),

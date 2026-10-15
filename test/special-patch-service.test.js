@@ -73,6 +73,10 @@ function makeBaseItemsGame(revision = 'base-one') {
   return `"items"\n{\n\t"store_currency_pricepoints"\n\t{\n\t\t"1" "${revision}"\n\t}\n\t"555" { "name" "Original Weather" }\n\t"677" { "name" "Original Radiant" }\n\t"678" { "name" "Original Dire" }\n}\n`;
 }
 
+function makeCosmeticItemsGame() {
+  return `"items_game"\n{\n\t"items"\n\t{\n\t\t"store_currency_pricepoints" { "1" "base" }\n\t\t"10" { "name" "Axe Default Weapon" "prefab" "default_item" "item_slot" "weapon" "used_by_heroes" { "npc_dota_hero_axe" "1" } }\n\t\t"20" { "name" "Axe Frostblade" "prefab" "wearable" "item_slot" "weapon" "used_by_heroes" { "npc_dota_hero_axe" "1" } "image_inventory" "econ/items/axe/frostblade" "model_player" "models/items/axe/frostblade.vmdl" "visuals" { "asset_modifier" { "type" "particle_create" "modifier" "particles/econ/items/axe/frost/frost.vpcf" } } }\n\t}\n}\n`;
+}
+
 async function writeBaseVpk(filePath, text) {
   const writer = new VpkWriter();
   writer.addFile('scripts/items/items_game.txt', Buffer.from(text, 'utf8'));
@@ -150,25 +154,26 @@ test('Patcher-compatible helpers inject idempotent search paths and match signat
   const twice = ensurePatchSearchPath(once);
   assert.equal(twice, once);
   assert.match(once, new RegExp(PATCH_MARKER));
-  assert.match(once, /Game\s+DotaModdingCommunityMods/);
-  assert.match(once, /Mod\s+DotaModdingCommunityMods/);
-  assert.ok(once.indexOf('Game\t\tDotaModdingCommunityMods') < once.indexOf('Game dota'), 'special Game path must precede the base dota search path');
-  assert.ok(once.indexOf('Mod\t\tDotaModdingCommunityMods') < once.indexOf('Game dota'), 'special Mod path must precede the base dota search path');
+  assert.match(once, /Game\s+VantaMods/);
+  assert.match(once, /Mod\s+VantaMods/);
+  assert.ok(once.indexOf('Game\t\tVantaMods') < once.indexOf('Game dota'), 'special Game path must precede the base dota search path');
+  assert.ok(once.indexOf('Mod\t\tVantaMods') < once.indexOf('Game dota'), 'special Mod path must precede the base dota search path');
   const legacyOrder = 'FileSystem { SearchPaths { Game dota_mods\nGame dota\n// Patched by DotaModdingCommunity Patcher\nGame DotaModdingCommunityMods\nMod DotaModdingCommunityMods } }';
   const reordered = ensurePatchSearchPath(legacyOrder);
-  assert.ok(reordered.indexOf('Game\t\tDotaModdingCommunityMods') < reordered.indexOf('Game dota_mods'));
-  assert.equal(reordered.match(/Game\s+DotaModdingCommunityMods/g)?.length, 1);
+  assert.ok(reordered.indexOf('Game\t\tVantaMods') < reordered.indexOf('Game dota_mods'));
+  assert.equal(reordered.match(/Game\s+VantaMods/g)?.length, 1);
+  assert.doesNotMatch(reordered, /DotaModdingCommunityMods/);
   assert.equal(ensurePatchSearchPath(reordered), reordered);
   const crlfWithoutSearchPaths = '"GameInfo"\r\n{\r\n\tFileSystem\r\n\t{\r\n\t\tSteamAppId\t570\r\n\t\tBreakpadAppId\t373300\r\n\t}\r\n}\r\n';
   const crlfPatched = ensurePatchSearchPath(crlfWithoutSearchPaths);
   assert.doesNotMatch(crlfPatched.replace(/\r\n/g, ''), /\n/);
   assert.equal(ensurePatchSearchPath(crlfPatched), crlfPatched);
-  assert.match(crlfPatched, /Game\s+DotaModdingCommunityMods[\s\S]*Game\s+dota[\s\S]*Game\s+core/);
-  assert.match(crlfPatched, /Mod\s+DotaModdingCommunityMods[\s\S]*Mod\s+dota/);
+  assert.match(crlfPatched, /Game\s+VantaMods[\s\S]*Game\s+dota[\s\S]*Game\s+core/);
+  assert.match(crlfPatched, /Mod\s+VantaMods[\s\S]*Mod\s+dota/);
   assert.match(crlfPatched, /Write\s+dota[\s\S]*AddonRoot_Language[\s\S]*AddonRoot\s+dota_addons[\s\S]*PublicContent\s+dota_core[\s\S]*PublicContent\s+core/);
   assert.equal(crlfPatched.match(/SearchPaths/g)?.length, 1);
-  assert.equal(crlfPatched.match(/Game\s+DotaModdingCommunityMods/g)?.length, 1);
-  assert.equal(crlfPatched.match(/Mod\s+DotaModdingCommunityMods/g)?.length, 1);
+  assert.equal(crlfPatched.match(/Game\s+VantaMods/g)?.length, 1);
+  assert.equal(crlfPatched.match(/Mod\s+VantaMods/g)?.length, 1);
   const signatures = appendSignature('original\n', Buffer.from(once));
   assert.equal(signatures.split('\n').at(-2), signatureLine(Buffer.from(once)));
   assert.equal(signaturesMatch(signatures, Buffer.from(once)), true);
@@ -208,8 +213,8 @@ test('Windows and Linux use upstream Source 2 relative mounts without cross-plat
   const gameinfoPaths = windowsPaths.join('\n');
   assert.match(gameinfoPaths, /Game_Language\s+dota_\*LANGUAGE\*/);
   assert.match(gameinfoPaths, /Game_LowViolence\s+dota_lv/);
-  assert.match(gameinfoPaths, /Game\s+DotaModdingCommunityMods[\s\S]*Game\s+dota[\s\S]*Game\s+core/);
-  assert.match(gameinfoPaths, /Mod\s+DotaModdingCommunityMods[\s\S]*Mod\s+dota/);
+  assert.match(gameinfoPaths, /Game\s+VantaMods[\s\S]*Game\s+dota[\s\S]*Game\s+core/);
+  assert.match(gameinfoPaths, /Mod\s+VantaMods[\s\S]*Mod\s+dota/);
   assert.doesNotMatch(gameinfoPaths, /linuxsteamrt64|\/home\/|\/bin\/|[A-Z]:\\/i);
   assert.equal(isSignaturePathSupported('win32', 'bin/win64/dota.signatures'), true);
   assert.equal(isSignaturePathSupported('win32', 'bin/linuxsteamrt64/dota.signatures'), false);
@@ -223,7 +228,7 @@ test('Windows Weather install builds valid gameinfo, VPK, and matching win64 sig
   const paths = service.getDotaPaths();
   const resolvedWindowsSignatures = await service.findSignaturesPath(paths);
   assert.equal(normalizedPathForComparison(path.relative(paths.root, paths.gameinfo), service.platform), 'dota/gameinfo_branchspecific.gi');
-  assert.equal(normalizedPathForComparison(path.relative(paths.root, paths.modVpk), service.platform), 'dotamoddingcommunitymods/pak01_dir.vpk');
+  assert.equal(normalizedPathForComparison(path.relative(paths.root, paths.modVpk), service.platform), 'vantamods/pak01_dir.vpk');
   assert.equal(normalizedPathForComparison(path.relative(paths.root, resolvedWindowsSignatures), service.platform), 'bin/win64/dota.signatures');
   const originalWindowsSignatures = await fs.readFile(windowsSignatures);
   const originalLinuxSignatures = await fs.readFile(signatures);
@@ -238,9 +243,9 @@ test('Windows Weather install builds valid gameinfo, VPK, and matching win64 sig
   const searchPathsClose = findMatchingBrace(patchedText, searchPathsOpen);
   assert.ok(fileSystemOpen >= 0 && fileSystemClose > fileSystemOpen, 'FileSystem block must remain balanced');
   assert.ok(searchPathsOpen > fileSystemOpen && searchPathsClose < fileSystemClose, 'SearchPaths must be nested inside FileSystem');
-  assert.match(patchedText, /Game\s+DotaModdingCommunityMods/);
-  assert.match(patchedText, /Mod\s+DotaModdingCommunityMods/);
-  assert.match(patchedText, /Game_Language\s+dota_\*LANGUAGE\*[\s\S]*Game_LowViolence\s+dota_lv[\s\S]*Game\s+DotaModdingCommunityMods/);
+  assert.match(patchedText, /Game\s+VantaMods/);
+  assert.match(patchedText, /Mod\s+VantaMods/);
+  assert.match(patchedText, /Game_Language\s+dota_\*LANGUAGE\*[\s\S]*Game_LowViolence\s+dota_lv[\s\S]*Game\s+VantaMods/);
   assert.doesNotMatch(patchedText, /linuxsteamrt64|\/home\/|\/usr\/|\/bin\//i);
 
   const manifest = await service.readSpecialManifest();
@@ -253,8 +258,8 @@ test('Windows Weather install builds valid gameinfo, VPK, and matching win64 sig
   assert.notDeepEqual(await fs.readFile(windowsSignatures), originalWindowsSignatures);
   assert.deepEqual(await fs.readFile(signatures), originalLinuxSignatures, 'Windows install must not write the Linux signature database');
 
-  const vpkPath = path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk');
-  const unexpectedRuntimeAlias = path.join(gamePath, 'DotaModdingCommunityMods', 'pak01.vpk');
+  const vpkPath = path.join(gamePath, 'VantaMods', 'pak01_dir.vpk');
+  const unexpectedRuntimeAlias = path.join(gamePath, 'VantaMods', 'pak01.vpk');
   assert.equal(await service.exists(unexpectedRuntimeAlias), false, 'Windows layout must not contain the Linux-only pak01.vpk alias');
   const reader = VpkReader.open(vpkPath);
   try {
@@ -274,7 +279,7 @@ test('Windows Weather and Towers combine, reinstall idempotently, diagnose files
   const baselineSignatures = await fs.readFile(windowsSignatures);
   await service.install(mods[0]);
   await service.install(mods[1]);
-  const combinedVpkPath = path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk');
+  const combinedVpkPath = path.join(gamePath, 'VantaMods', 'pak01_dir.vpk');
   const combinedVpk = await fs.readFile(combinedVpkPath);
   const combinedGameinfo = await fs.readFile(gameinfo);
   const combinedSignatures = await fs.readFile(windowsSignatures, 'utf8');
@@ -292,7 +297,7 @@ test('Windows Weather and Towers combine, reinstall idempotently, diagnose files
   const repeatedDigestIndex = repeatedSignatureLines.findIndex((line) => line.startsWith('DIGEST:'));
   assert.equal(repeatedSignatureLines.slice(0, repeatedDigestIndex).filter((line) => line.startsWith('...\\..\\..\\dota\\gameinfo_branchspecific.gi~SHA1:')).length, 1);
   assert.equal(repeatedSignatureLines.slice(repeatedDigestIndex + 1).filter((line) => line.startsWith('...\\..\\..\\dota\\gameinfo_branchspecific.gi~SHA1:')).length, 1);
-  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01.vpk')), false);
+  assert.equal(await service.exists(path.join(gamePath, 'VantaMods', 'pak01.vpk')), false);
 
   let reader = VpkReader.open(combinedVpkPath);
   try {
@@ -314,7 +319,7 @@ test('Windows Weather and Towers combine, reinstall idempotently, diagnose files
   await service.remove(mods[1].id);
   assert.deepEqual(await fs.readFile(gameinfo), baselineGameinfo);
   assert.deepEqual(await fs.readFile(windowsSignatures), baselineSignatures);
-  assert.deepEqual((await fs.readdir(path.join(gamePath, 'DotaModdingCommunityMods'))).filter((name) => /^pak01(?:_dir)?\.vpk$/i.test(name)), []);
+  assert.deepEqual((await fs.readdir(path.join(gamePath, 'VantaMods'))).filter((name) => /^pak01(?:_dir)?\.vpk$/i.test(name)), []);
 
   const writeDiagnostics = diagnostics.filter((entry) => ['pre-write', 'installed'].includes(entry.stage));
   assert.ok(writeDiagnostics.length >= 6, 'each Windows patch write should emit pre-write and installed diagnostics');
@@ -331,8 +336,8 @@ test('Linux runtime compatibility writes the pak01.vpk alias alongside the upstr
 
   await service.install(mods[0]);
 
-  const primary = path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk');
-  const alias = path.join(gamePath, 'DotaModdingCommunityMods', 'pak01.vpk');
+  const primary = path.join(gamePath, 'VantaMods', 'pak01_dir.vpk');
+  const alias = path.join(gamePath, 'VantaMods', 'pak01.vpk');
   assert.equal(await service.exists(primary), true, 'upstream override VPK should still be created');
   assert.equal(await service.exists(alias), true, 'Linux runtime mount path should also receive the pak01.vpk alias');
 
@@ -343,6 +348,32 @@ test('Linux runtime compatibility writes the pak01.vpk alias alongside the upstr
   } finally { reader.close(); }
 });
 
+test('migrates a VANTA-owned legacy mount VPK to VantaMods and preserves unrelated legacy files', async (t) => {
+  const fixture = await createFixture(t, { platform: 'linux' });
+  const { service, gamePath, gameinfo } = fixture;
+  await service.install(mods[0]);
+
+  const currentVpk = path.join(gamePath, 'VantaMods', 'pak01_dir.vpk');
+  const legacyDirectory = path.join(gamePath, 'DotaModdingCommunityMods');
+  const legacyVpk = path.join(legacyDirectory, 'pak01_dir.vpk');
+  const unrelatedFile = path.join(legacyDirectory, 'user-notes.txt');
+  await fs.mkdir(legacyDirectory, { recursive: true });
+  await fs.copyFile(currentVpk, legacyVpk);
+  await fs.writeFile(unrelatedFile, 'keep this unrelated file');
+  await fs.rm(currentVpk);
+  await fs.rm(path.join(gamePath, 'VantaMods', 'pak01.vpk'));
+  const legacyGameinfo = (await fs.readFile(gameinfo, 'utf8')).replaceAll('VantaMods', 'DotaModdingCommunityMods');
+  await fs.writeFile(gameinfo, legacyGameinfo);
+
+  await service.install(mods[0]);
+
+  assert.equal(await service.exists(currentVpk), true);
+  assert.equal(await service.exists(legacyVpk), false);
+  assert.equal(await fs.readFile(unrelatedFile, 'utf8'), 'keep this unrelated file');
+  assert.match(await fs.readFile(gameinfo, 'utf8'), /Game\s+VantaMods/);
+  assert.doesNotMatch(await fs.readFile(gameinfo, 'utf8'), /DotaModdingCommunityMods/);
+});
+
 test('Linux install and repeat install preserve pre-DIGEST Valve signatures and uninstall restores both baselines', async (t) => {
   const fixture = await createFixture(t, { platform: 'linux', gameinfoText: WINDOWS_GAMEINFO_BASELINE });
   const { service, gamePath, gameinfo, signatures } = fixture;
@@ -351,8 +382,8 @@ test('Linux install and repeat install preserve pre-DIGEST Valve signatures and 
   const baselineSignatures = await fs.readFile(signatures);
 
   await service.install(mods[0]);
-  const primary = path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk');
-  const alias = path.join(gamePath, 'DotaModdingCommunityMods', 'pak01.vpk');
+  const primary = path.join(gamePath, 'VantaMods', 'pak01_dir.vpk');
+  const alias = path.join(gamePath, 'VantaMods', 'pak01.vpk');
   const firstPrimary = await fs.readFile(primary);
   const firstAlias = await fs.readFile(alias);
   const firstSignatures = await fs.readFile(signatures);
@@ -400,8 +431,8 @@ test('Linux uninstall with corrupted backups strips only VANTA edits and preserv
   const actualDigestIndex = actualLines.findIndex((line) => line.startsWith('DIGEST:'));
   assert.deepEqual(actualLines.slice(0, actualDigestIndex + 1), expectedPrefix.slice(0, expectedDigestIndex + 1));
   assert.equal(actualLines.slice(actualDigestIndex + 1).filter((line) => line.startsWith('...\\..\\..\\dota\\gameinfo_branchspecific.gi~')).length, 0);
-  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01.vpk')), false);
-  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), false);
+  assert.equal(await service.exists(path.join(gamePath, 'VantaMods', 'pak01.vpk')), false);
+  assert.equal(await service.exists(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk')), false);
 });
 
 test('Windows refuses to fall back to a Linux-only signatures database', async (t) => {
@@ -415,7 +446,7 @@ test('Windows refuses to fall back to a Linux-only signatures database', async (
 
   assert.deepEqual(await fs.readFile(gameinfo), originalGameinfo);
   assert.deepEqual(await fs.readFile(signatures), originalLinuxSignatures);
-  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), false);
+  assert.equal(await service.exists(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk')), false);
 });
 
 test('Windows Weather remove restores baseline gameinfo and win64 signatures and removes override VPK', async (t) => {
@@ -428,8 +459,8 @@ test('Windows Weather remove restores baseline gameinfo and win64 signatures and
 
   assert.deepEqual(await fs.readFile(gameinfo), Buffer.from(WINDOWS_GAMEINFO_BASELINE));
   assert.deepEqual(await fs.readFile(windowsSignatures), originalSignatures);
-  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), false);
-  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01.vpk')), false);
+  assert.equal(await service.exists(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk')), false);
+  assert.equal(await service.exists(path.join(gamePath, 'VantaMods', 'pak01.vpk')), false);
 });
 
 test('Windows Weather rollback restores exact game files and leaves no VPK aliases after a signature write failure', async (t) => {
@@ -459,8 +490,8 @@ test('Windows Weather rollback restores exact game files and leaves no VPK alias
   assert.deepEqual(await fs.readFile(gameinfo), originalGameinfo);
   assert.deepEqual(await fs.readFile(windowsSignatures), originalWindowsSignatures);
   assert.deepEqual(await fs.readFile(signatures), originalLinuxSignatures);
-  await assert.rejects(fs.access(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), { code: 'ENOENT' });
-  await assert.rejects(fs.access(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01.vpk')), { code: 'ENOENT' });
+  await assert.rejects(fs.access(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk')), { code: 'ENOENT' });
+  await assert.rejects(fs.access(path.join(gamePath, 'VantaMods', 'pak01.vpk')), { code: 'ENOENT' });
 });
 
 test('Windows Weather items_game decoding matches Patcher UTF-8 errors=ignore behavior', async (t) => {
@@ -474,7 +505,7 @@ test('Windows Weather items_game decoding matches Patcher UTF-8 errors=ignore be
 
   await service.install(mods[0]);
 
-  const reader = VpkReader.open(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk'));
+  const reader = VpkReader.open(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk'));
   try {
     const output = reader.readFile('scripts/items/items_game.txt').toString('utf8');
     assert.match(output, /\(\uFFFD$/u, 'valid UTF-8 replacement characters survive while malformed bytes are ignored');
@@ -502,7 +533,7 @@ test('Windows Weather update atomically replaces definition and keeps baseline b
 
   await service.update(updatedMod);
 
-  const reader = VpkReader.open(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk'));
+  const reader = VpkReader.open(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk'));
   try {
     const patchedItems = reader.readFile('scripts/items/items_game.txt').toString('utf8');
     assert.match(patchedItems, /Updated Default Weather/);
@@ -580,7 +611,7 @@ test('uninstall clears stale library records after Steam verification without re
   await service.install(mods[0]);
   await fs.writeFile(gameinfo, cleanGameinfo);
   await fs.writeFile(signatures, cleanSignatures);
-  await fs.rm(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk'), { force: true });
+  await fs.rm(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk'), { force: true });
   const backupDirectory = await service.getBackupDirectory(gamePath);
   await fs.writeFile(path.join(backupDirectory, 'gameinfo_branchspecific.gi'), 'invalid stale backup');
   await fs.writeFile(await service.findSignatureBackup(backupDirectory, signatures), 'invalid stale signature backup');
@@ -622,7 +653,7 @@ test('patch install fails safely when neither platform has a signatures database
   assert.deepEqual(await fs.readFile(gameinfo), originalGameinfo);
   assert.equal(await service.exists(signatures), false);
   assert.equal(await service.exists(windowsSignatures), false);
-  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), false);
+  assert.equal(await service.exists(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk')), false);
 });
 
 test('removing one cross-platform patch preserves the other using an existing signature fallback', async (t) => {
@@ -642,7 +673,7 @@ test('removing one cross-platform patch preserves the other using an existing si
   assert.notDeepEqual(await fs.readFile(gameinfo), originalGameinfo);
   assert.notDeepEqual(await fs.readFile(windowsSignatures), originalWindowsSignatures);
   assert.equal((await service.readSpecialManifest()).signaturesRelativePath, path.join('bin', 'win64', 'dota.signatures'));
-  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), true);
+  assert.equal(await service.exists(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk')), true);
 });
 
 test('Windows special patches update win64 signatures and restore the matching backup', async (t) => {
@@ -664,7 +695,7 @@ test('Windows special patches update win64 signatures and restore the matching b
   await service.remove('weather-test');
   assert.deepEqual(await fs.readFile(signatures), originalLinuxSignatures);
   assert.deepEqual(await fs.readFile(windowsSignatures), originalWindowsSignaturesWithCrlf);
-  assert.equal(await service.exists(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), false);
+  assert.equal(await service.exists(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk')), false);
 });
 
 test('Switching a special patch to Windows restores the previously patched Linux signature file', async (t) => {
@@ -699,7 +730,7 @@ test('special patches install/update/remove transactionally, combine weather and
   await service.install(mods[1]);
   assert.ok(storage.state.installedMods['weather-test']);
   assert.ok(storage.state.installedMods['tower-test']);
-  const patchReader = VpkReader.open(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk'));
+  const patchReader = VpkReader.open(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk'));
   try {
     const items = patchReader.readFile('scripts/items/items_game.txt').toString('utf8');
     assert.match(items, /Default Weather/);
@@ -726,7 +757,7 @@ test('special patches install/update/remove transactionally, combine weather and
   await service.remove('weather-test');
   assert.equal(storage.state.installedMods['weather-test'], undefined);
   assert.ok(storage.state.installedMods['tower-test']);
-  const afterWeatherRemoval = VpkReader.open(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk'));
+  const afterWeatherRemoval = VpkReader.open(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk'));
   try { assert.doesNotMatch(afterWeatherRemoval.readFile('scripts/items/items_game.txt').toString('utf8'), /Default Weather/); }
   finally { afterWeatherRemoval.close(); }
 
@@ -734,7 +765,7 @@ test('special patches install/update/remove transactionally, combine weather and
   assert.deepEqual(storage.state.installedMods, {});
   assert.equal(await fs.readFile(gameinfo, 'utf8'), 'FileSystem\n{\n\tSearchPaths\n\t{\n\t\tGame\t\tdota\n\t}\n}\n');
   assert.equal(await fs.readFile(signatures, 'utf8'), 'original signature data\n');
-  await assert.rejects(fs.access(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), { code: 'ENOENT' });
+  await assert.rejects(fs.access(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk')), { code: 'ENOENT' });
   assert.ok(progress.some((event) => event.state === 'completed' && event.operation === 'special-patch'));
 });
 
@@ -745,6 +776,7 @@ test('special patch failures are explicit, preserve game files, and running Dota
   const oldGameinfo = await fs.readFile(gameinfo);
   const oldSignatures = await fs.readFile(signatures);
 
+  await fs.rm(path.join(service.stateDirectory, 'definitions', `${mods[0].requiredFiles[0].gitBlobSha}.txt`), { force: true });
   definitions.set('https://patch.test/Snow.txt', `${weatherText}// tampered\n`);
   await assert.rejects(service.update(mods[0]), /Integrity check failed/);
   assert.equal(storage.state.installedMods['weather-test'].specialPatchState, 'error');
@@ -757,6 +789,30 @@ test('special patch failures are explicit, preserve game files, and running Dota
   await assert.rejects(service.update(mods[0]), /Close Dota 2/);
   assert.deepEqual(await fs.readFile(gameinfo), oldGameinfo);
   assert.deepEqual(await fs.readFile(signatures), oldSignatures);
+});
+
+test('local cosmetic loadouts generate and remove an item schema VPK transactionally', async (t) => {
+  const fixture = await createFixture(t);
+  const { service, storage, gamePath } = fixture;
+  await writeBaseVpk(path.join(gamePath, 'dota', 'pak01_dir.vpk'), makeCosmeticItemsGame());
+
+  const applied = await service.applyCosmetics({ 'item:axe:weapon': '20' });
+  assert.equal(applied.id, 'vanta-generated-cosmetics');
+  assert.equal(storage.state.settings.cosmeticLoadout['item:axe:weapon'], '20');
+  assert.equal(storage.state.installedMods['vanta-generated-cosmetics'].specialType, 'cosmetics');
+  const generatedPath = path.join(gamePath, 'VantaMods', 'pak01_dir.vpk');
+  const generated = VpkReader.open(generatedPath);
+  try {
+    const text = generated.readFile('scripts/items/items_game.txt').toString('utf8');
+    assert.match(text, /"10"\s*\{[\s\S]*?"image_inventory"\s+"econ\/items\/axe\/frostblade"/);
+    assert.match(text, /particles\/econ\/items\/axe\/frost\/frost\.vpcf/);
+  } finally { generated.close(); }
+
+  await service.applyCosmetics({});
+  assert.deepEqual(storage.state.settings.cosmeticLoadout, {});
+  assert.equal(storage.state.installedMods['vanta-generated-cosmetics'], undefined);
+  assert.equal(await fs.readFile(path.join(gamePath, 'dota', 'gameinfo_branchspecific.gi'), 'utf8'), 'FileSystem\n{\n\tSearchPaths\n\t{\n\t\tGame\t\tdota\n\t}\n}\n');
+  await assert.rejects(fs.access(generatedPath), { code: 'ENOENT' });
 });
 
 test('missing gameinfo is rejected before update and uninstall restores missing patch-owned files', async (t) => {
@@ -774,7 +830,7 @@ test('missing gameinfo is rejected before update and uninstall restores missing 
   await service.remove('weather-test');
   assert.deepEqual(await fs.readFile(gameinfo), originalGameinfo);
   assert.deepEqual(await fs.readFile(signatures), originalSignatures);
-  await assert.rejects(fs.access(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), { code: 'ENOENT' });
+  await assert.rejects(fs.access(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk')), { code: 'ENOENT' });
 });
 
 test('startup recovery restores persisted installed state after a crash during finalization', async (t) => {
@@ -811,7 +867,7 @@ test('uninstall recovers a missing override VPK and a lost manifest from persist
   const originalSignatures = await fs.readFile(signatures);
 
   await service.install(mods[0]);
-  await fs.rm(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk'));
+  await fs.rm(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk'));
   await fs.rm(service.manifestPath);
   await service.remove('weather-test');
 
@@ -866,7 +922,7 @@ test('a signatures write failure rolls back the earlier VPK and gameinfo writes'
   assert.deepEqual(storage.state.installedMods, {});
   assert.deepEqual(await fs.readFile(gameinfo), originalGameinfo);
   assert.deepEqual(await fs.readFile(signatures), originalSignatures);
-  await assert.rejects(fs.access(path.join(gamePath, 'DotaModdingCommunityMods', 'pak01_dir.vpk')), { code: 'ENOENT' });
+  await assert.rejects(fs.access(path.join(gamePath, 'VantaMods', 'pak01_dir.vpk')), { code: 'ENOENT' });
 });
 
 test('separate VANTA service instances cannot patch the same game concurrently', async (t) => {

@@ -18,6 +18,9 @@ const CATEGORY_LABELS = new Proxy({ heroes: 'Heroes', 'hero-items': 'Hero items'
       music: 'catalog.filterMusic',
       'mega-kill': 'catalog.filterMegaKills',
       terrains: 'catalog.filterTerrains',
+      terrain: 'catalog.filterTerrains',
+      landscapes: 'catalog.filterTerrains',
+      landscape: 'catalog.filterTerrains',
       trees: 'catalog.filterTrees',
       river: 'catalog.filterRiver',
       creeps: 'catalog.filterCreeps',
@@ -54,6 +57,18 @@ const CATEGORY_LABELS = new Proxy({ heroes: 'Heroes', 'hero-items': 'Hero items'
   }
 });
 const HERO_PORTRAIT_BASE = 'https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/';
+const MOD_SECTION_CATEGORIES = {
+  heroes: new Set(['heroes', 'hero-items', 'herofx']),
+  world: new Set(['terrains', 'terrain', 'landscapes', 'landscape', 'maps', 'map', 'trees', 'river', 'creeps', 'towers', 'weather', 'roshan', 'ancient', 'tormentor', 'wards', 'couriers', 'creep-deny']),
+  interface: new Set(['backgrounds', 'huds', 'emblems', 'versus-screens', 'item-icons', 'ranks', 'pings', 'cursors', 'announcers', 'mega-kill', 'music', 'fonts', 'packs']),
+  effects: new Set(['shaders', 'ti-bp-effects', 'item-effects', 'ranged-attack', 'high-five']),
+  other: new Set(['hero-sounds', 'sounds', 'optimization', 'other', 'sites', 'pedestal']),
+};
+const VISIBLE_MOD_SECTIONS = new Set(['heroes', 'world', 'interface']);
+function normalizedCatalogCategory(value) {
+  const category = String(value || '').trim().toLowerCase().replace(/[ _]+/g, '-');
+  return ['terrain', 'terrains', 'landscape', 'landscapes', 'map', 'maps'].includes(category) ? 'terrains' : category;
+}
 const HERO_PORTRAIT_ALIASES = { 'anti mage': 'antimage', 'anti-mage': 'antimage', anti_mage: 'antimage', clockwerk: 'rattletrap', doom: 'doom_bringer', io: 'wisp', lifestealer: 'life_stealer', magnus: 'magnataur', 'nature prophet': 'furion', necrophos: 'necrolyte', outworld_devourer: 'obsidian_destroyer', 'outworld devourer': 'obsidian_destroyer', 'queen of pain': 'queenofpain', 'shadow fiend': 'nevermore', timbersaw: 'shredder', 'treant protector': 'treant', underlord: 'abyssal_underlord', 'vengeful spirit': 'vengefulspirit', wraith_king: 'skeleton_king', windranger: 'windrunner', zeus: 'zuus' };
 const HERO_ID_TO_KEY = { 1: 'anti_mage', 2: 'axe', 3: 'bane', 4: 'bloodseeker', 5: 'crystal_maiden', 6: 'drow_ranger', 7: 'earthshaker', 8: 'juggernaut', 9: 'mirana', 10: 'morphling', 11: 'shadow_fiend', 12: 'phantom_lancer', 13: 'puck', 14: 'pudge', 15: 'razor', 16: 'sand_king', 17: 'storm_spirit', 18: 'sven', 19: 'tiny', 20: 'vengeful_spirit', 21: 'windranger', 22: 'zeus', 23: 'kunkka', 25: 'lina', 26: 'lion', 27: 'shadow_shaman', 28: 'slardar', 29: 'tidehunter', 30: 'witch_doctor', 31: 'lich', 32: 'riki', 33: 'enigma', 34: 'tinker', 35: 'sniper', 36: 'necrophos', 37: 'warlock', 38: 'beastmaster', 39: 'queen_of_pain', 40: 'venomancer', 41: 'faceless_void', 42: 'wraith_king', 43: 'death_prophet', 44: 'phantom_assassin', 45: 'pugna', 46: 'templar_assassin', 47: 'viper', 48: 'luna', 49: 'dragon_knight', 50: 'dazzle', 51: 'clockwerk', 52: 'leshrac', 53: 'nature_prophet', 54: 'lifestealer', 55: 'dark_seer', 56: 'clinkz', 57: 'omniknight', 58: 'enchantress', 59: 'huskar', 60: 'night_stalker', 61: 'broodmother', 62: 'bounty_hunter', 63: 'weaver', 64: 'jakiro', 65: 'batrider', 66: 'chen', 67: 'spectre', 68: 'ancient_apparition', 69: 'doom', 70: 'ursa', 71: 'spirit_breaker', 72: 'gyrocopter', 73: 'alchemist', 74: 'invoker', 75: 'silencer', 76: 'outworld_devourer', 77: 'lycan', 78: 'brewmaster', 79: 'shadow_demon', 80: 'lone_druid', 81: 'chaos_knight', 82: 'meepo', 83: 'treant_protector', 84: 'ogre_magi', 85: 'undying', 86: 'rubick', 87: 'disruptor', 88: 'nyx_assassin', 89: 'naga_siren', 90: 'keeper_of_the_light', 91: 'io', 92: 'visage', 93: 'slark', 94: 'medusa', 95: 'troll_warlord', 96: 'centaur', 97: 'magnus', 98: 'timbersaw', 99: 'bristleback', 100: 'tusk', 101: 'skywrath_mage', 102: 'abaddon', 103: 'elder_titan', 104: 'legion_commander', 105: 'techies', 106: 'ember_spirit', 107: 'earth_spirit', 108: 'underlord', 109: 'terrorblade', 110: 'phoenix', 111: 'oracle', 112: 'winter_wyvern', 113: 'arc_warden', 114: 'monkey_king', 119: 'dark_willow', 120: 'pangolier', 121: 'grimstroke', 123: 'hoodwink', 126: 'void_spirit', 128: 'snapfire', 129: 'mars', 131: 'ringmaster', 135: 'dawnbreaker', 136: 'marci', 137: 'primal_beast', 138: 'muerta', 145: 'kez', 155: 'largo' };
 function normalizeHeroId(value) {
@@ -66,9 +81,9 @@ function normalizeHeroId(value) {
     'outworld devourer': 'outworld_devourer', 'outworld-devourer': 'outworld_devourer', 'outworld destroyer': 'outworld_devourer', 'outworld-destroyer': 'outworld_devourer', outworld_destroyer: 'outworld_devourer', 'obsidian destroyer': 'outworld_devourer', 'obsidian-destroyer': 'outworld_devourer', obsidian_destroyer: 'outworld_devourer',
     'queen of pain': 'queen_of_pain', 'queen-of-pain': 'queen_of_pain', queenofpain: 'queen_of_pain',
     'shadow fiend': 'shadow_fiend', 'shadow-fiend': 'shadow_fiend', nevermore: 'shadow_fiend',
-    'treant protector': 'treant_protector', 'treant-protector': 'treant_protector',
+    treant: 'treant_protector', 'treant protector': 'treant_protector', 'treant-protector': 'treant_protector',
     'vengeful spirit': 'vengeful_spirit', 'vengeful-spirit': 'vengeful_spirit', vengefulspirit: 'vengeful_spirit',
-    windrunner: 'windranger', 'rattletrap': 'clockwerk', wisp: 'io', 'life stealer': 'lifestealer', 'life-stealer': 'lifestealer', magnataur: 'magnus', 'abyssal underlord': 'underlord', 'abyssal-underlord': 'underlord', shredder: 'timbersaw',
+    windrunner: 'windranger', 'rattletrap': 'clockwerk', wisp: 'io', 'life stealer': 'lifestealer', 'life-stealer': 'lifestealer', magnataur: 'magnus', abyssal_underlord: 'underlord', abyssalunderlord: 'underlord', 'abyssal underlord': 'underlord', 'abyssal-underlord': 'underlord', shredder: 'timbersaw',
   };
   return aliases[raw] || raw.replace(/['’.-]+/g, ' ').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
@@ -79,7 +94,7 @@ if (typeof window.addEventListener === 'function') {
   window.addEventListener('error', (event) => { window.vanta.call('diagnostics:renderer-log', { level: 'error', message: event.message, stack: event.error?.stack || '' }).catch(() => {}); });
   window.addEventListener('unhandledrejection', (event) => { const reason = event.reason; window.vanta.call('diagnostics:renderer-log', { level: 'error', message: reason?.message || String(reason), stack: reason?.stack || '' }).catch(() => {}); });
 }
-function toast(message) { const node = $('#toast'); if (!node) return; node.textContent = message; node.classList.add('show'); setTimeout(() => node.classList.remove('show'), 3500); }
+function toast(message) { const node = $('#toast'); if (!node) return; node.textContent = window.i18n?.localizeToast?.(message) ?? message; node.classList.add('show'); setTimeout(() => node.classList.remove('show'), 3500); }
 const downloadProgressTasks = new Map();
 function downloadProgressText(ru, en) { return state.data?.settings?.appLanguage === 'ru' ? ru : en; }
 function formatDownloadedBytes(bytes) {
@@ -102,7 +117,7 @@ function localizedDownloadPhase(task) {
     'Download failed': 'Ошибка скачивания',
     'Installation failed': 'Ошибка установки',
   };
-  return phases[task.phase] || task.phase || 'Подготовка…';
+  return phases[task.phase] || window.i18n?.localizeToast?.(task.phase || 'Подготовка…') || task.phase || 'Подготовка…';
 }
 function renderDownloadProgress() {
   const panel = $('#download-progress-panel');
@@ -134,7 +149,7 @@ function renderDownloadProgress() {
       ? (hasPercent
         ? `${Math.round(task.percent)}% · ${formatDownloadedBytes(task.loaded)} / ${formatDownloadedBytes(task.total)}`
         : `${formatDownloadedBytes(task.loaded)} · ${downloadProgressText('размер неизвестен', 'size unknown')}`)
-      : task.error || task.phase || '';
+      : window.i18n?.localizeToast?.(task.error || task.phase || '') || task.error || task.phase || '';
     item.querySelector('.download-progress-details').textContent = details;
     const progressBar = item.querySelector('.download-progress-track span');
     progressBar.style.width = `${task.state === 'completed' ? 100 : hasPercent ? Math.max(0, Math.min(100, Number(task.percent))) : 100}%`;
@@ -142,7 +157,8 @@ function renderDownloadProgress() {
   });
 }
 function updateDownloadProgress(event) {
-  if (!event || !['mod-install', 'theme-install', 'special-patch'].includes(event.operation)) return;
+  if (!event || !['mod-install', 'theme-install', 'special-patch', 'library-reinstall'].includes(event.operation)) return;
+  if (event.operation === 'library-reinstall' && event.id !== 'library-reinstall') return;
   const key = `${event.operation}:${event.id}`;
   const previous = downloadProgressTasks.get(key);
   if (previous?.dismissTimer) clearTimeout(previous.dismissTimer);
@@ -281,23 +297,50 @@ function i18nKey(key, fallback) { return t(key, fallback); }
 function slotLabel(slot) {
   const raw = String(slot || '').trim();
   if (!raw) return '';
-  const normalized = raw.toLowerCase().replace(/_/g, ' ');
+  const normalized = raw.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
   const map = {
     head: 'slot.head',
     hands: 'slot.hands',
     summon: 'slot.summon',
+    shoulder: 'slot.shoulders',
     shoulders: 'slot.shoulders',
     belt: 'slot.belt',
     back: 'slot.back',
+    cape: 'slot.back',
     weapon: 'slot.weapon',
-    set: 'slot.set',
+    arms: 'slot.arms',
+    arm: 'slot.arms',
+    'ambient effects': 'slot.ambientEffects',
+    legs: 'slot.legs',
+    neck: 'slot.neck',
+    taunt: 'slot.taunt',
     'off hand': 'slot.offhand',
+    'off hand weapon': 'slot.offhand',
+    'offhand weapon': 'slot.offhand',
     offhand: 'slot.offhand',
-    'off_hand': 'slot.offhand',
     armor: 'slot.armor',
-    armour: 'slot.armor'
+    armour: 'slot.armor',
+    misc: 'slot.misc',
+    tail: 'slot.tail',
+    mount: 'slot.mount',
+    courier: 'slot.courier',
+    ward: 'slot.ward',
+    'hero effects': 'slot.heroEffects',
+    'persona selector': 'slot.personaSelector',
+    persona: 'slot.personaBase',
+    body: 'slot.body',
+    face: 'slot.face',
+    hair: 'slot.hair',
+    costume: 'slot.costume',
+    'hero base': 'slot.heroBase',
+    'hero voice': 'slot.heroVoice',
+    'custom effects': 'slot.customEffects',
   };
-  return t(map[normalized] || map[raw.toLowerCase()] || normalized, normalized.replace(/\s+/g, ' '));
+  const persona = normalized.match(/^(.+?) persona (\d+)$/);
+  const baseKey = persona ? map[persona[1]] : map[normalized];
+  const baseLabel = baseKey ? t(baseKey, normalized) : t(`slot.${normalized.replace(/\s+/g, '')}`, normalized);
+  if (persona) return formatTranslation(t('slot.persona', '{slot} · Persona {number}'), { slot: baseLabel, number: persona[2] });
+  return baseLabel;
 }
 function isVideoPreview(url) { return /\.(?:mp4|webm|ogg|mov)(?:[?#].*)?$/i.test(String(url || '')); }
 function showPreview(url, title = t('catalog.preview', 'Preview'), poster = '') { if (!isVideoPreview(url)) return; const dialog = $('#video-preview'); const content = $('#video-preview-content'); if (!dialog || !content) return; content.replaceChildren(); const heading = document.createElement('h2'); heading.textContent = title; const frame = document.createElement('div'); frame.className = 'video-preview-frame'; const video = document.createElement('video'); video.controls = true; video.setAttribute('controls', '');
@@ -326,9 +369,44 @@ dialog.showModal();
 video.load();
 }
 function bindPreviewButtons() { document.querySelectorAll('[data-preview-url]').forEach((button) => { button.onclick = () => showPreview(button.dataset.previewUrl, button.dataset.previewTitle || t('catalog.preview', 'Preview')); }); }
-function setTitle() { const title = $('#page-title'); if (title) title.textContent = ({ discover: t('nav.home'), mods: t('nav.mods'), installed: t('nav.library'), 'saved-packs': t('nav.savedPacks', 'Packs'), 'download-archives': state.data?.settings?.appLanguage === 'ru' ? 'Скачанные архивы' : 'Downloaded archives', authors: t('nav.authors'), guides: t('nav.guides'), 'hero-grids': t('nav.heroGrids', 'Hero Grids'), settings: t('nav.settings'), themes: state.data?.settings?.appLanguage === 'ru' ? 'Темы' : 'Themes' })[state.view]; const search = $('.topbar .search'); if (search) { search.classList.toggle('settings-hidden', state.view === 'settings' || state.view === 'hero-grids' || state.view === 'download-archives' || state.view === 'themes'); const searchInput = search.querySelector('input'); const searchKey = state.view === 'saved-packs' ? 'search.packs.placeholder' : state.view === 'installed' ? 'search.library.placeholder' : 'search.placeholder'; searchInput?.setAttribute('data-i18n-placeholder', searchKey); searchInput?.setAttribute('placeholder', t(searchKey)); } document.querySelectorAll('.top-tab').forEach((tab) => tab.classList.toggle('active', state.view === 'mods' && tab.dataset.top === state.section));
+function setTitle() {
+  const isHeroDetail = state.view === 'mods' && state.section === 'heroes' && Boolean(state.hero);
+  const isHeroDirectory = state.view === 'mods' && state.section === 'heroes' && !state.hero;
+  const titleText = ({ discover: t('nav.home'), mods: t('nav.mods'), cosmetics: t('nav.cosmetics', 'Cosmetics'), installed: t('nav.library'), 'saved-packs': t('nav.savedPacks', 'Packs'), 'download-archives': state.data?.settings?.appLanguage === 'ru' ? 'Скачанные архивы' : 'Downloaded archives', authors: t('nav.authors'), guides: t('nav.guides'), 'hero-grids': t('nav.heroGrids', 'Hero Grids'), settings: t('nav.settings'), themes: state.data?.settings?.appLanguage === 'ru' ? 'Темы' : 'Themes' })[state.view];
+  const title = $('#page-title');
+  const heading = title?.parentElement;
+  if (heading && isHeroDetail) {
+    const heroKey = normalizeHeroId(state.hero);
+    const heroLabel = typeof heroDirectoryLabel === 'function' ? heroDirectoryLabel(heroKey) : state.hero.replace(/_/g, ' ');
+    heading.classList.add('hero-page-heading');
+    heading.innerHTML = `<p class="eyebrow">${t('catalog.heroLoadout').toUpperCase()}</p><h1 id="page-title">${escapeHtml(heroLabel)}</h1><p class="hero-page-description">${t('catalog.heroLoadoutDesc')}</p>`;
+  } else if (heading?.classList.contains('hero-page-heading')) {
+    heading.classList.remove('hero-page-heading');
+    heading.innerHTML = '<h1 id="page-title"></h1>';
+    $('#page-title').textContent = titleText || '';
+  } else if (title) title.textContent = titleText || '';
+  const search = $('.topbar .search');
+  if (search) {
+    const searchableCategory = state.view === 'mods' && ['world', 'interface'].includes(state.section);
+    const hideSearch = !searchableCategory && (state.view === 'discover' || state.view === 'installed' || isHeroDirectory || isHeroDetail || state.view === 'settings' || state.view === 'hero-grids' || state.view === 'download-archives' || state.view === 'themes' || state.view === 'cosmetics');
+    search.classList.toggle('settings-hidden', hideSearch);
+    const searchInput = search.querySelector('input');
+    const searchKey = state.view === 'saved-packs' ? 'search.packs.placeholder' : state.view === 'installed' ? 'search.library.placeholder' : 'search.placeholder';
+    searchInput?.setAttribute('data-i18n-placeholder', searchKey);
+    searchInput?.setAttribute('placeholder', t(searchKey));
+  }
+  document.querySelectorAll('.top-tab').forEach((tab) => tab.classList.toggle('active', state.view === 'mods' && tab.dataset.top === state.section));
 }
 async function loadCatalog() {
+  if (state.view === 'authors' || state.view === 'saved-packs') {
+    state.view = 'installed';
+    state.author = '';
+    return loadCatalog();
+  }
+  if (state.view === 'mods' && !VISIBLE_MOD_SECTIONS.has(state.section)) {
+    state.section = 'heroes';
+    state.lastModsSection = 'heroes';
+  }
   const focusedSearch = document.activeElement?.id === 'search';
   const searchSelection = focusedSearch ? { start: $('#search').selectionStart, end: $('#search').selectionEnd } : null;
   const restoreSearchFocus = () => {
@@ -345,14 +423,27 @@ async function loadCatalog() {
   const requestedAuthor = state.author;
   const requestedQuery = state.view === 'authors' ? state.authorQuery : state.view === 'mods' && state.hero ? state.heroQuery : state.query;
   const isCurrentRequest = () => state.view === requestedView && state.section === requestedSection && state.category === requestedCategory && state.hero === requestedHero && state.author === requestedAuthor && (state.view === 'authors' ? state.authorQuery : state.view === 'mods' && state.hero ? state.heroQuery : state.query) === requestedQuery;
-  const catalogPayload = { query: requestedQuery, category: state.view === 'authors' || state.view === 'mods' && state.hero ? 'all' : state.category, section: state.view === 'discover' || state.view === 'authors' || state.view === 'mods' && state.hero ? 'all' : state.section, author: state.view === 'authors' ? state.author : '', hero: state.view === 'mods' && state.hero ? state.hero : '' };
-  const catalogCacheKey = `${requestedView}:${JSON.stringify(catalogPayload)}`;
-  const cachedEntry = requestedView === 'installed' || requestedView === 'saved-packs' ? null : catalogPageCache.get(catalogCacheKey);
+  const isHeroSection = requestedView === 'mods' && requestedSection === 'heroes';
+  const isHeroDirectory = isHeroSection && !requestedHero;
+  const libraryPayload = {
+    query: isHeroDirectory ? '' : requestedQuery,
+    category: 'all',
+    ...(requestedView === 'mods' && requestedHero ? { hero: requestedHero } : {}),
+    installedOnly: requestedView === 'installed',
+  };
+  const catalogCacheKey = `${requestedView}:${JSON.stringify(libraryPayload)}`;
+  const cachedEntry = requestedView === 'saved-packs' ? null : catalogPageCache.get(catalogCacheKey);
   const cachedCatalog = cachedEntry && Date.now() - cachedEntry.createdAt < 60_000 ? cachedEntry.data : null;
   if (cachedEntry && !cachedCatalog) catalogPageCache.delete(catalogCacheKey);
   const content = $('#content');
-  const canKeepCurrentView = requestedView !== 'installed' && requestedView !== 'saved-packs' && Boolean(content.children?.length);
+  const staleCosmeticsView = Boolean(content.querySelector('.cosmetics-page')) && requestedView !== 'cosmetics';
+  const canKeepCurrentView = requestedView !== 'saved-packs' && !staleCosmeticsView && Boolean(content.children?.length);
   setTitle();
+  if (requestedView === 'cosmetics') {
+    content.classList.remove('catalog-refreshing');
+    await window.loadCosmeticsView?.();
+    return;
+  }
   if (requestedView === 'mods' && !state.hero) {
     content.querySelectorAll('[data-category]').forEach((button) => button.classList.toggle('active', button.dataset.category === state.category));
   }
@@ -364,25 +455,7 @@ async function loadCatalog() {
     return;
   }
   if (canKeepCurrentView) content.classList.add('catalog-refreshing');
-  else content.innerHTML = `<div class="empty"><strong>${t('catalog.loading')}</strong>${t('catalog.syncingMetadata', 'Syncing lightweight metadata from GitHub...')}</div>`;
-
-  if (state.view === 'saved-packs') {
-    try {
-      const data = await call('saved-packs:list');
-      if (!isCurrentRequest()) return;
-      state.data = { ...state.data, ...data };
-      content.classList.remove('catalog-refreshing');
-      render();
-      restoreSearchFocus();
-      return;
-    } catch (error) {
-      if (!isCurrentRequest()) return;
-      content.classList.remove('catalog-refreshing');
-      if (canKeepCurrentView) toast(error.message);
-      else content.innerHTML = `<div class="error"><strong>${t('catalog.unavailable')}</strong>${error.message}</div>`;
-      return;
-    }
-  }
+  else content.innerHTML = `<div class="empty"><strong>${state.data?.settings?.appLanguage === 'ru' ? 'Загружаем библиотеку' : 'Loading VantaMods'}</strong></div>`;
 
   if (state.view === 'download-archives') {
     try {
@@ -401,125 +474,89 @@ async function loadCatalog() {
   }
 
   try {
-    const data = state.view === 'installed' ? await call('library:get') : await call('catalog:list', catalogPayload);
+    const data = await call('library:mods', libraryPayload);
     if (!isCurrentRequest()) return;
-    if (requestedView !== 'installed') {
-      catalogPageCache.set(catalogCacheKey, { createdAt: Date.now(), data: { mods: data.mods, categories: data.categories, sections: data.sections, section: data.section, meta: data.meta } });
-      if (catalogPageCache.size > 32) catalogPageCache.delete(catalogPageCache.keys().next().value);
-    }
+    catalogPageCache.set(catalogCacheKey, { createdAt: Date.now(), data: { mods: data.mods, categories: data.categories } });
+    if (catalogPageCache.size > 32) catalogPageCache.delete(catalogPageCache.keys().next().value);
     state.data = { ...state.data, ...data };
     content.classList.remove('catalog-refreshing');
     updateGameStatus(state.data.gamePath);
     render();
     restoreSearchFocus();
-    if (state.data.meta?.offline) toast(t('catalog.offlineToast'));
   } catch (error) {
     if (!isCurrentRequest()) return;
     content.classList.remove('catalog-refreshing');
     if (canKeepCurrentView) toast(error.message);
-    else content.innerHTML = `<div class="error"><strong>${t('catalog.unavailable')}</strong>${error.message}<br><br>${t('catalog.tryAgain')}</div>`;
+    else content.innerHTML = `<div class="error"><strong>${t('catalog.unavailable')}</strong>${error.message}</div>`;
   }
 }
-async function refreshCatalogAutomatically() { try { const refreshed = await call('catalog:refresh'); catalogPageCache.clear(); if (state.view === 'installed') { state.data = { ...state.data, ...refreshed }; render(); } else await loadCatalog(); } catch { /* Keep the current catalog when the network is unavailable. */ } }
 function updateGameStatus(gamePath) { const text = gamePath ? formatTranslation(t('catalog.gameReadyWithPath', 'Dota 2 ready · {path}'), { path: gamePath }) : t('catalog.gameMissing', 'Dota 2 not found — set the path in settings'); const status = $('#status-text'); const dot = $('#status-dot'); const sidebarText = $('#sidebar-status-text'); const sidebarDot = $('#sidebar-status-dot'); if (status) status.textContent = text; if (dot) dot.classList.toggle('ready', Boolean(gamePath)); if (sidebarText) sidebarText.textContent = gamePath ? t('status.dotaReady', 'Dota 2 ready') : t('status.dotaMissing', 'Dota 2 not found'); if (sidebarDot) sidebarDot.classList.toggle('ready', Boolean(gamePath)); }
-function renderSavedPacks() {
-  const packs = state.data.savedPacks || [];
-  if (!packs.length) {
-    $('#content').innerHTML = `<div class="empty"><strong>${t('savedPacks.emptyTitle', 'No saved packs yet')}</strong>${t('savedPacks.emptyHint', 'Save a pack from the library to keep a reusable preset.')}</div>`;
-    return;
-  }
-  $('#content').innerHTML = `<div class="saved-packs-panel"><div class="library-header"><div><p class="eyebrow">${t('savedPacks.title', 'Saved packs')}</p><p>${t('savedPacks.subtitle', 'Reusable pack presets saved from the library.')}</p></div></div><div class="saved-pack-list">${packs.map((pack) => `<article class="library-mod saved-pack-item"><div class="library-thumb-empty">▣</div><div class="library-mod-info"><strong>${libraryEscape(pack.name)}</strong><small>${formatTranslation(t('savedPacks.modCount', '{count} mods'), { count: pack.modCount || 0 })}</small><small>${pack.active ? t('savedPacks.alreadyActive', 'Already active') : t('savedPacks.inactive', 'Inactive')}${pack.activeFileName ? ` · ${libraryEscape(pack.activeFileName)}` : ''}</small></div><div class="library-mod-actions"><button class="action ${pack.active ? 'secondary' : ''}" data-saved-pack-activate="${libraryEscape(pack.id)}" ${pack.active ? 'disabled' : ''}>${pack.active ? t('savedPacks.alreadyActive', 'Already active') : t('savedPacks.activate', 'Activate')}</button><button class="action secondary" data-saved-pack-contents="${libraryEscape(pack.id)}">${t('savedPacks.viewContents', 'View contents')}</button><button class="action secondary" data-saved-pack-rename="${libraryEscape(pack.id)}">${t('catalog.rename', 'Rename')}</button><button class="action secondary" data-saved-pack-delete="${libraryEscape(pack.id)}">${t('catalog.delete', 'Delete')}</button></div></article>`).join('')}</div></div>`;
-  document.querySelectorAll('[data-saved-pack-activate]').forEach((button) => {
-    button.onclick = async () => {
-      const id = button.dataset.savedPackActivate;
-      try {
-        state.data = await call('saved-packs:activate', { id });
-        render();
-        toast(t('savedPacks.activated', 'Saved pack activated.'));
-      } catch (error) { toast(error.message); }
-    };
-  });
-  document.querySelectorAll('[data-saved-pack-contents]').forEach((button) => {
-    button.onclick = async () => {
-      try { showUnifiedPackContents(await call('saved-packs:contents', { id: button.dataset.savedPackContents })); }
-      catch (error) { toast(/missing/i.test(error.message) ? t('savedPacks.fileMissing', 'Saved pack file was not found.') : t('savedPacks.viewerError', 'Could not open pack contents.')); }
-    };
-  });
-  document.querySelectorAll('[data-saved-pack-rename]').forEach((button) => {
-    button.onclick = async () => {
-      const id = button.dataset.savedPackRename;
-      const current = (state.data.savedPacks || []).find((pack) => String(pack.id) === String(id));
-      const result = await showAppInputDialog({
-        title: t('savedPacks.renameTitle', 'Rename saved pack'),
-        label: t('savedPacks.renamePrompt', 'Pack name'),
-        value: current?.name || '',
-        placeholder: t('savedPacks.namePlaceholder', 'My pack'),
-        confirmLabel: t('common.save', 'Save'),
-        validate: (value) => {
-          if (!value) return t('savedPacks.validationRequired', 'Enter a pack name.');
-          if (value.length > 80) return t('savedPacks.validationTooLong', 'Pack name is too long.');
-          return '';
-        }
-      });
-      if (!result.confirmed) return;
-      try {
-        state.data = await call('saved-packs:rename', { id, name: result.value });
-        render();
-      } catch (error) { toast(error.message); }
-    };
-  });
-  document.querySelectorAll('[data-saved-pack-delete]').forEach((button) => {
-    button.onclick = async () => {
-      const id = button.dataset.savedPackDelete;
-      const pack = (state.data.savedPacks || []).find((item) => String(item.id) === String(id));
-      const result = await showAppConfirmDialog({
-        title: t('savedPacks.deleteTitle', 'Delete saved pack'),
-        message: formatTranslation(t('savedPacks.deleteMessage', 'Delete saved pack "{name}"?'), { name: pack?.name || t('savedPacks.defaultTitle', 'Saved pack') }),
-        confirmLabel: t('common.delete', 'Delete'),
-        destructive: true,
-      });
-      if (!result.confirmed) return;
-      try {
-        state.data = await call('saved-packs:delete', { id });
-        render();
-      } catch (error) { toast(error.message); }
-    };
-  });
+function renderSavedPacks() { state.view = 'installed'; return renderLibrary(); }
+function getInstalledRecord(id) {
+  const installed = state.data?.installed;
+  if (Array.isArray(installed)) return installed.find((record) => String(record?.id || record?.modId) === String(id));
+  return installed?.[id] || Object.values(installed || {}).find((record) => String(record?.id || record?.modId) === String(id));
 }
-
-function render() { if (state.view !== 'download-archives') document.querySelector('.download-archive-bulk[data-archive-portal]')?.remove(); $('#content').classList.remove('catalog-refreshing'); setTitle(); document.querySelectorAll('.nav-item[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === state.view)); const activeTheme = (state.data.themes || []).find((theme) => theme.id === state.data.settings?.activeThemeId) || (state.data.themes || []).find((theme) => theme.id === 'vanta-default'); if (activeTheme) window.applyVantaTheme?.(activeTheme); if (state.view === 'settings') return renderSettings(); if (state.view === 'themes') return renderThemesPage(); if (state.view === 'download-archives') return renderDownloadArchives(); if (state.view === 'authors') return renderAuthors(); if (state.view === 'installed') return renderLibrary(); if (state.view === 'saved-packs') return renderSavedPacks(); if (state.view === 'mods' && state.section === 'heroes') return state.hero ? renderHeroDetail() : renderHeroDirectory(); const categories = state.data.categories || []; const mods = state.data.mods || []; if (state.view === 'discover') { $('#content').innerHTML = renderFeatured(mods) + renderRecent(mods); bindFeatured(); bindCardLinks(); document.querySelectorAll('[data-action]').forEach((node) => node.onclick = () => action(node.dataset.action, node.dataset.id)); const more = $('#recent-more'); if (more) more.onclick = () => { state.recentExpanded = !state.recentExpanded; render(); };
-      return;
-    } const filter = `<div class="toolbar"><div class="filters"><button class="filter ${state.category === 'all' ? 'active' : ''}" data-category="all">${t('catalog.allMods', 'All mods')}</button>${categories.map((category) => `<button class="filter ${state.category === category ? 'active' : ''}" data-category="${category}">${CATEGORY_LABELS[category] || category}</button>`).join('')}</div><span class="result-count">${formatTranslation(t('catalog.heroModsCount', '{count} mods'), { count: mods.length })}</span></div>`; const cards = mods.length ? `<div class="mod-grid">${mods.map(card).join('')}</div>` : `<div class="empty"><strong>${t('catalog.empty', 'Nothing here yet')}</strong>${t('catalog.emptyHint', 'Try another search or category.')}</div>`; $('#content').innerHTML = filter + cards; document.querySelectorAll('[data-category]').forEach((node) => node.onclick = () => { state.category = node.dataset.category; loadCatalog(); }); document.querySelectorAll('[data-action]').forEach((node) => node.onclick = () => action(node.dataset.action, node.dataset.id)); }
+function render() { if (state.view === 'authors' || state.view === 'saved-packs') state.view = 'installed'; if (state.view !== 'download-archives') document.querySelector('.download-archive-bulk[data-archive-portal]')?.remove(); $('#content').classList.remove('catalog-refreshing'); setTitle(); document.querySelectorAll('.nav-item[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === state.view)); const activeTheme = (state.data.themes || []).find((theme) => theme.id === state.data.settings?.activeThemeId) || (state.data.themes || []).find((theme) => theme.id === 'vanta-default'); if (activeTheme) window.applyVantaTheme?.(activeTheme);
+if (state.view === 'cosmetics') return window.renderCosmeticsView?.(state.data.cosmetics);
+if (state.view === 'settings') return renderSettings();
+if (state.view === 'themes') return renderThemesPage();
+if (state.view === 'download-archives') return renderDownloadArchives();
+if (state.view === 'installed') return renderLibrary();
+if (state.view === 'mods' && state.section === 'heroes') return state.hero ? renderHeroDetail() : renderHeroDirectory();
+const categories = state.data.categories || [];
+const mods = state.data.mods || [];
+if (state.view === 'discover') return renderHome();
+const visibleMods = state.view === 'mods'
+  ? mods.filter((mod) => (state.section === 'all' || MOD_SECTION_CATEGORIES[state.section]?.has(normalizedCatalogCategory(mod.categoryId)))
+    && (state.category === 'all' || normalizedCatalogCategory(mod.categoryId) === normalizedCatalogCategory(state.category)))
+  : mods;
+const sectionCategories = state.view === 'mods' && state.section !== 'all'
+  ? categories.filter((category) => MOD_SECTION_CATEGORIES[state.section]?.has(normalizedCatalogCategory(category)))
+  : categories;
+const categoryOptions = state.view === 'mods' && state.section === 'world'
+  ? [...new Set(['terrains', ...sectionCategories.map(normalizedCatalogCategory)])]
+  : sectionCategories;
+const filter = `<div class="toolbar"><div class="filters"><button class="filter ${state.category === 'all' ? 'active' : ''}" data-category="all">${t('catalog.allMods', 'All mods')}</button>${categoryOptions.map((category) => `<button class="filter ${normalizedCatalogCategory(state.category) === normalizedCatalogCategory(category) ? 'active' : ''}" data-category="${category}">${CATEGORY_LABELS[category] || category}</button>`).join('')}</div><span class="result-count">${formatTranslation(t('catalog.heroModsCount', '{count} mods'), { count: visibleMods.length })}</span></div>`;
+const cards = visibleMods.length ? `<div class="mod-grid">${visibleMods.map(card).join('')}</div>` : `<div class="empty"><strong>${t('catalog.empty', 'Nothing here yet')}</strong>${t('catalog.emptyHint', 'Try another search or category.')}</div>`;
+$('#content').innerHTML = filter + cards;
+document.querySelectorAll('[data-category]').forEach((node) => node.onclick = () => { state.category = node.dataset.category; loadCatalog(); });
+document.querySelectorAll('[data-action]').forEach((node) => node.onclick = () => action(node.dataset.action, node.dataset.id));
+}
 function renderLibrary() { const installed = Object.values(state.data.installed || {}); const groups = { packs: [], heroes: [], heroSounds: [], world: [], interface: [], effects: [], other: [] }; const categoryGroup = (category, mod) => mod.type === 'pack' || category === 'packs' ? 'packs' : ['heroes', 'hero-items', 'herofx'].includes(category) ? 'heroes' : category === 'hero-sounds' ? 'heroSounds' : ['terrains', 'trees', 'river', 'creeps', 'towers', 'roshan', 'ancient', 'tormentor', 'wards', 'couriers', 'pedestal', 'creep-deny'].includes(category) ? 'world' : ['backgrounds', 'huds', 'emblems', 'versus-screens', 'item-icons', 'ranks', 'pings', 'cursors'].includes(category) ? 'interface' : ['shaders', 'ti-bp-effects', 'item-effects', 'ranged-attack', 'high-five'].includes(category) ? 'effects' : 'other'; installed.forEach((mod) => groups[categoryGroup(mod.categoryId, mod)].push(mod)); const labels = { packs: t('catalog.filterPacks', 'Packs'), heroes: t('catalog.filterHeroes', 'Heroes'), heroSounds: t('catalog.filterHeroes', 'Hero sounds'), world: t('catalog.filterWorld', 'World'), interface: t('catalog.filterInterface', 'Interface'), effects: t('catalog.filterEffects', 'Effects'), other: t('catalog.filterOther', 'Other') }; const selected = state.librarySelection; const row = (mod) => `<article class="library-mod ${selected.has(mod.modId) ? 'selected' : ''}"><label class="library-check"><input type="checkbox" data-library-select="${mod.modId}" ${selected.has(mod.modId) ? 'checked' : ''}><span></span></label>${mod.previewUrl ? `<img src="${mod.previewUrl}" loading="lazy" alt="">` : '<div class="library-thumb-empty">◈</div>'}<div class="library-mod-info"><strong>${mod.name || mod.modId}</strong><small>${CATEGORY_LABELS[mod.categoryId] || mod.categoryId}${mod.heroLabel ? ` · ${mod.heroLabel}` : ''}${mod.slot ? ` · ${slotLabel(mod.slot)}` : ''}</small><small>${mod.enabled === false ? t('catalog.actionDisabled', 'Disabled') : t('catalog.actionEnabled', 'Enabled')} · ${formatModDate(mod.installedAt)}</small></div><div class="library-mod-actions"><button class="toggle-button ${mod.enabled !== false ? 'on' : ''}" data-library-toggle="${mod.modId}">${mod.enabled !== false ? t('catalog.actionEnabled', 'Enabled') : t('catalog.actionDisabled', 'Disabled')}</button><button class="action secondary" data-library-remove="${mod.modId}">${t('catalog.uninstall', 'Remove')}</button></div></article>`; const sections = Object.entries(groups).filter(([, mods]) => mods.length).map(([id, mods]) => `<section class="library-section"><div class="library-section-heading"><h2>${labels[id]}</h2><span>${mods.length}</span></div><div class="library-mod-list">${mods.map(row).join('')}</div></section>`).join(''); const packs = state.data.packs || []; $('#content').innerHTML = `<div class="library-header"><div><p class="eyebrow">LOCAL LIBRARY</p><h2>Installed mods</h2><p>Manage ownership, enabled state and saved mod packs.</p></div><div class="library-header-actions"><button class="action secondary" id="library-select-all">Select all</button><button class="action" id="library-pack">Create pack</button></div></div><div class="library-bulk"><span>${selected.size} selected</span><button class="action secondary" id="library-enable-selected" ${selected.size ? '' : 'disabled'}>Enable selected</button><button class="action secondary" id="library-disable-selected" ${selected.size ? '' : 'disabled'}>Disable selected</button><button class="action secondary" id="library-remove-selected" ${selected.size ? '' : 'disabled'}>Remove selected</button></div>${sections || '<div class="empty"><strong>Library is empty</strong>Install a mod from Mods to see it here.</div>'}${packs.length ? `<section class="library-section packs-section"><div class="library-section-heading"><h2>Packs</h2><span>${packs.length}</span></div>${packs.map((pack) => `<div class="pack-row"><strong>${pack.name}</strong><span>${pack.modIds.length} mods</span><button class="action secondary" data-pack-delete="${pack.id}">Delete</button></div>`).join('')}</section>` : ''}`; bindLibrary(); renderExternalFiles(); syncLibraryBulkUi(); }
-function bindLibrary() { document.querySelectorAll('[data-library-select]').forEach((input) => input.onchange = () => { input.checked ? state.librarySelection.add(input.dataset.librarySelect) : state.librarySelection.delete(input.dataset.librarySelect); renderLibrary(); }); document.querySelectorAll('[data-library-toggle]').forEach((button) => button.onclick = async () => { state.data = await call('mod:set-enabled', { id: button.dataset.libraryToggle, enabled: button.textContent.trim() !== t('catalog.actionEnabled', 'Enabled') }); renderLibrary(); }); document.querySelectorAll('[data-library-remove]').forEach((button) => button.onclick = async () => { const confirmation = await showAppConfirmDialog({ title: t('catalog.removeInstalledModTitle', 'Remove mod'), message: t('catalog.removeInstalledMod', 'Remove this installed mod?'), confirmLabel: t('catalog.uninstall', 'Uninstall'), destructive: true }); if (!confirmation.confirmed) return; state.data = await call('mod:uninstall', { id: button.dataset.libraryRemove }); state.librarySelection.delete(button.dataset.libraryRemove); renderLibrary(); }); $('#library-select-all').onclick = () => { const entries = Array.isArray(state.data.installed) ? state.data.installed : Object.values(state.data.installed || {}); entries.forEach((item) => state.librarySelection.add(item?.id || item?.modId)); renderLibrary(); }; $('#library-pack').onclick = async () => { const entries = Array.isArray(state.data.installed) ? state.data.installed : Object.values(state.data.installed || {}); const validIds = new Set(entries.map((item) => item?.id || item?.modId).filter(Boolean)); const ids = [...state.librarySelection].filter((id) => validIds.has(id)); if (!ids.length) return toast(t('catalog.selectModsFirst', 'Select mods first.')); state.librarySelection = new Set(ids); const result = await showAppInputDialog({ title: t('savedPacks.saveTitle', 'Save pack'), label: t('catalog.packName', 'Pack name'), placeholder: t('savedPacks.namePlaceholder', 'My pack'), confirmLabel: t('common.save', 'Save'), validate: (value) => { if (!value) return t('savedPacks.validationRequired', 'Enter a pack name.');
-        return '';
-      } });
-      if (!result.confirmed) return;
-      state.data = await call('library:save-pack', { name: result.value, modIds: ids });
-      state.librarySelection.clear();
-      renderLibrary();
-      toast(t('catalog.packSaved', 'Pack saved.'));
-    };
-    $('#library-enable-selected').onclick = () => bulkLibrarySet(true);
-    $('#library-disable-selected').onclick = () => bulkLibrarySet(false);
-    $('#library-remove-selected').onclick = async () => {
-      const ids = [...state.librarySelection];
-      if (!ids.length) return toast(t('catalog.selectModsFirst', 'Select mods first.'));
-      const confirmation = await showAppConfirmDialog({
-        title: t('catalog.removeSelectedModsTitle', 'Remove selected mods'),
-        message: formatTranslation(t('catalog.removeSelectedMods', 'Remove {count} selected mod(s)?'), { count: ids.length }),
-        confirmLabel: t('catalog.uninstall', 'Uninstall'),
-        destructive: true,
-      });
-      if (!confirmation.confirmed) return;
-      for (const id of ids) await call('mod:uninstall', { id });
-      state.librarySelection.clear();
-      await loadCatalog();
-    };
-    document.querySelectorAll('[data-pack-delete]').forEach((button) => button.onclick = async () => {
-      state.data = await call('library:delete-pack', { id: button.dataset.packDelete });
-      renderLibrary();
-    });
+function bindLibrary() { document.querySelectorAll('[data-library-select]').forEach((input) => input.onchange = () => { input.checked ? state.librarySelection.add(input.dataset.librarySelect) : state.librarySelection.delete(input.dataset.librarySelect); renderLibrary(); }); document.querySelectorAll('[data-library-toggle]').forEach((button) => button.onclick = async () => { state.data = await call('mod:set-enabled', { id: button.dataset.libraryToggle, enabled: button.textContent.trim() !== t('catalog.actionEnabled', 'Enabled') }); renderLibrary(); }); document.querySelectorAll('[data-library-remove]').forEach((button) => button.onclick = async () => { const confirmation = await showAppConfirmDialog({ title: t('catalog.removeInstalledModTitle', 'Remove mod'), message: t('catalog.removeInstalledMod', 'Remove this installed mod?'), confirmLabel: t('catalog.uninstall', 'Uninstall'), destructive: true }); if (!confirmation.confirmed) return; state.data = await call('mod:uninstall', { id: button.dataset.libraryRemove }); state.librarySelection.delete(button.dataset.libraryRemove); renderLibrary(); }); $('#library-select-all').onclick = () => { const entries = Array.isArray(state.data.installed) ? state.data.installed : Object.values(state.data.installed || {}); entries.forEach((item) => state.librarySelection.add(item?.id || item?.modId)); renderLibrary(); }; $('#library-pack').onclick = async () => { const entries = Array.isArray(state.data.installed) ? state.data.installed : Object.values(state.data.installed || {}); const validIds = new Set(entries.map((item) => item?.id || item?.modId).filter(Boolean));
+const ids = [...state.librarySelection].filter((id) => validIds.has(id));
+if (!ids.length) return toast(t('catalog.selectModsFirst', 'Select mods first.'));
+state.librarySelection = new Set(ids);
+const result = await showAppInputDialog({ title: t('savedPacks.saveTitle', 'Save pack'), label: t('catalog.packName', 'Pack name'), placeholder: t('savedPacks.namePlaceholder', 'My pack'), confirmLabel: t('common.save', 'Save'), validate: (value) => { if (!value) return t('savedPacks.validationRequired', 'Enter a pack name.');
+return '';
+} });
+if (!result.confirmed) return;
+state.data = await call('library:save-pack', { name: result.value, modIds: ids });
+state.librarySelection.clear();
+renderLibrary();
+toast(t('catalog.packSaved', 'Pack saved.'));
+};
+$('#library-enable-selected').onclick = () => bulkLibrarySet(true);
+$('#library-disable-selected').onclick = () => bulkLibrarySet(false);
+$('#library-remove-selected').onclick = async () => {
+const ids = [...state.librarySelection];
+if (!ids.length) return toast(t('catalog.selectModsFirst', 'Select mods first.'));
+const confirmation = await showAppConfirmDialog({
+title: t('catalog.removeSelectedModsTitle', 'Remove selected mods'),
+message: formatTranslation(t('catalog.removeSelectedMods', 'Remove {count} selected mod(s)?'), { count: ids.length }),
+confirmLabel: t('catalog.uninstall', 'Uninstall'),
+destructive: true,
+});
+if (!confirmation.confirmed) return;
+for (const id of ids) await call('mod:uninstall', { id });
+state.librarySelection.clear();
+await loadCatalog();
+};
+document.querySelectorAll('[data-pack-delete]').forEach((button) => button.onclick = async () => {
+state.data = await call('library:delete-pack', { id: button.dataset.packDelete });
+renderLibrary();
+});
 }
 async function bulkLibrarySet(enabled) { for (const id of state.librarySelection) await call('mod:set-enabled', { id, enabled }); state.data = await call('library:get'); renderLibrary(); }
 function renderExternalFiles() { const files = state.data.external || []; if (!files.length) return; const section = document.createElement('section'); section.className = 'library-section external-files-section'; section.innerHTML = `<div class="library-section-heading"><h2>${t('catalog.externalFiles')}</h2><span>${files.length}</span></div><p class="external-note">${t('catalog.externalFilesNote')}</p><div class="library-mod-list">${files.map((file) => `<article class="library-mod external-file"><img src="${file.previewUrl || ''}" loading="lazy" alt=""><div class="library-mod-info"><strong>${file.fileName}</strong><small>${file.category}${file.heroLabel ? ` · ${file.heroLabel}` : ''}</small><small>${(file.size / 1024 / 1024).toFixed(1)} MB · ${file.relativePath}</small></div><span class="external-badge">${t('catalog.externalBadge')}</span></article>`).join('')}</div>`; $('#content').appendChild(section); }
@@ -539,21 +576,81 @@ function renderRecent(mods) {
   const headingControls = `<div class="recent-heading-meta"><span>${formatTranslation(t('catalog.recentCount', '{count} new mods'), { count: recent.length })}</span>${remaining.length ? `<button id="recent-more" class="recent-more" aria-expanded="${expanded}">${toggleLabel}</button>` : ''}</div>`;
   return `<section class="recent-section"><div class="recent-heading"><div><p class="eyebrow">${t('catalog.recentlyAddedBadge', 'LAST 7 DAYS')}</p><h2>${t('catalog.recentlyAdded', 'Recently added')}</h2></div>${headingControls}</div><div class="mod-grid recent-grid">${first.map(card).join('')}</div>${remaining.length ? `<div class="mod-grid recent-more-items ${expanded ? '' : 'hidden'}">${remaining.map(card).join('')}</div>` : ''}</section>`;
 }
+function renderHome() {
+  const mods = state.data.mods || [];
+  $('#content').innerHTML = `${renderFeatured(mods)}${renderRecent(mods)}`;
+  bindFeatured();
+  bindCardLinks();
+  document.querySelectorAll('.recent-section [data-action]').forEach((button) => {
+    button.onclick = () => action(button.dataset.action, button.dataset.id);
+  });
+  $('#recent-more')?.addEventListener('click', () => {
+    state.recentExpanded = !state.recentExpanded;
+    renderHome();
+  });
+}
 function renderHeroDirectory() { const heroes = new Map(); for (const mod of state.data.mods || []) { const id = normalizeHeroId(mod.hero || mod.heroId || mod.heroName || mod.heroLabel); if (!id) continue; const entry = heroes.get(id) || { id, label: mod.heroLabel || id.replace(/_/g, ' '), count: 0 }; entry.count += 1; entry.label = mod.heroLabel || entry.label; heroes.set(id, entry); } const list = [...heroes.values()].sort((left, right) => left.label.localeCompare(right.label)); $('#content').innerHTML = `<div class="hero-directory-head"><div><p class="eyebrow">${t('catalog.authorIntro')}</p><h2>${t('catalog.chooseHero')}</h2><p>${t('catalog.heroDirectoryDesc')}</p></div><span class="result-count">${formatTranslation(t('catalog.heroBadges', '{count} heroes'), { count: list.length })}</span></div><div class="hero-grid">${list.map((hero) => `<button class="hero-card" data-hero="${hero.id}"><img src="${HERO_PORTRAIT_BASE}${heroPortraitId(hero.id)}.png" alt="${hero.label}"><span class="hero-card-shade"></span><span class="hero-card-copy"><strong>${hero.label}</strong><small>${formatTranslation(t('catalog.heroModsCount', '{count} mods'), { count: hero.count })}</small></span></button>`).join('')}</div>`; document.querySelectorAll('[data-hero]').forEach((node) => node.onclick = () => { state.hero = node.dataset.hero; state.heroSlot = 'all'; state.heroQuery = ''; loadCatalog(); }); }
-function renderHeroDetail() { const heroMods = state.data.mods.filter((mod) => !state.heroSlot || state.heroSlot === 'all' || mod.slot === state.heroSlot); const heroLabel = heroMods[0]?.heroLabel || state.hero.replace(/_/g, ' '); const slots = [...new Set(state.data.mods.map((mod) => mod.slot).filter(Boolean))]; $('#content').innerHTML = `<button class="back-link" id="hero-back">← ${t('catalog.backToHeroes')}</button><section class="hero-detail"><div class="hero-detail-head"><div><p class="eyebrow">${t('catalog.heroLoadout').toUpperCase()}</p><h2>${heroLabel}</h2><p>${t('catalog.heroLoadoutDesc')}</p></div><span class="badge">${formatTranslation(t('catalog.heroModsCount', '{count} mods'), { count: state.data.mods.length })}</span></div><div class="slot-tabs"><button class="filter ${state.heroSlot === 'all' ? 'active' : ''}" data-slot="all">${t('catalog.allSlots')}</button>${slots.map((slot) => `<button class="filter ${state.heroSlot === slot ? 'active' : ''}" data-slot="${slot}">${slotLabel(slot)}</button>`).join('')}</div><label class="hero-search"><span>⌕</span><input id="hero-search" type="search" data-i18n-placeholder="search.hero.placeholder" placeholder="${t('search.hero.placeholder')}" value="${state.heroQuery}"></label><div class="mod-grid">${heroMods.length ? heroMods.map(card).join('') : `<div class="empty"><strong>${t('catalog.noMods')}</strong>${t('catalog.emptySlotHint', 'Try another slot or search.')}</div>`}</div></section>`; $('#hero-back').onclick = () => { state.hero = ''; state.heroSlot = 'all'; loadCatalog(); }; $('#hero-search').oninput = (event) => { state.heroQuery = event.target.value; clearTimeout(window.heroSearchTimer); window.heroSearchTimer = setTimeout(loadCatalog, 220); }; document.querySelectorAll('[data-slot]').forEach((node) => node.onclick = () => { state.heroSlot = node.dataset.slot; renderHeroDetail(); }); document.querySelectorAll('[data-action]').forEach((node) => node.onclick = () => action(node.dataset.action, node.dataset.id)); }
+function normalizedHeroSlot(value) {
+  const slot = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return ({ off_hand: 'offhand', offhand_weapon: 'offhand', off_hand_weapon: 'offhand', shoulder: 'shoulders', totem: 'weapon' })[slot] || slot;
+}
+function heroSlotLabel(slot) {
+  if (normalizeHeroId(state.hero) === 'earthshaker' && normalizedHeroSlot(slot) === 'weapon') return state.data?.settings?.appLanguage === 'ru' ? 'Тотем' : 'Totem';
+  return slotLabel(slot);
+}
+function renderHeroDetail() {
+  const previousItemsScrollTop = document.querySelector('.hero-items-content')?.scrollTop || 0;
+  const previousPageScrollY = window.scrollY || 0;
+  const heroKey = normalizeHeroId(state.hero);
+  const heroMods = (state.data.mods || []).filter((mod) => heroDirectoryIds(mod).includes(heroKey));
+  const cosmeticData = state.data.cosmetics;
+  const cosmeticHero = cosmeticData?.heroes?.find((item) => normalizeHeroId(item.key) === heroKey);
+  const catalogSlots = heroMods.map((mod) => mod.slot).filter((slot) => slot && normalizedHeroSlot(slot) !== 'set');
+  const cosmeticSlots = (cosmeticHero?.slots || []).map((slot) => slot.id.split(':').at(-1)).filter((slot) => slot && normalizedHeroSlot(slot) !== 'set');
+  const slots = [...new Map([...catalogSlots, ...cosmeticSlots].map((slot) => [normalizedHeroSlot(slot), slot])).values()]
+    .sort((left, right) => left.localeCompare(right));
+  const activeSlot = normalizedHeroSlot(state.heroSlot || 'all');
+  const visibleMods = heroMods.filter((mod) => normalizedHeroSlot(mod.slot) !== 'set' && (activeSlot === 'all' || normalizedHeroSlot(mod.slot) === activeSlot));
+  const cosmeticCards = cosmeticHero ? inlineHeroCosmeticsMarkup(cosmeticData, cosmeticHero) : '';
+  const emptyGrid = !visibleMods.length && !cosmeticCards;
+  const isRussian = state.data?.settings?.appLanguage === 'ru';
+  $('#content').innerHTML = `<button class="back-link" id="hero-back">← ${t('catalog.backToHeroes')}</button><section class="hero-workspace"><div class="hero-preview-pane"><div class="hero-preview-placeholder"><span aria-hidden="true">◈</span><strong>${isRussian ? 'Окно для предпросмотра' : 'Preview window'}</strong></div>${cosmeticHero ? `<div class="hero-preview-actions">${inlineHeroCosmeticsActionsMarkup(cosmeticData, cosmeticHero)}</div>` : ''}</div><div class="hero-items-pane"><div class="hero-items-layout"><aside class="hero-slot-sidebar"><p class="eyebrow">${isRussian ? 'СЛОТЫ' : 'SLOTS'}</p><div class="hero-slot-list"><button class="filter ${activeSlot === 'all' ? 'active' : ''}" data-slot="all">${t('catalog.allSlots')}</button>${slots.map((slot) => `<button class="filter ${activeSlot === normalizedHeroSlot(slot) ? 'active' : ''}" data-slot="${escapeHtml(slot)}">${escapeHtml(heroSlotLabel(slot))}</button>`).join('')}</div></aside><div class="hero-items-content"><label class="hero-search"><span>⌕</span><input id="hero-search" type="search" data-i18n-placeholder="search.hero.placeholder" placeholder="${t('search.hero.placeholder')}" value="${escapeHtml(state.heroQuery || '')}"></label><div class="hero-mod-grid">${visibleMods.map(card).join('')}${cosmeticCards}${emptyGrid ? `<div class="empty"><strong>${t('catalog.noMods')}</strong>${t('catalog.emptySlotHint', 'Try another slot or search.')}</div>` : ''}</div></div></div></div></section>`;
+  requestAnimationFrame(() => {
+    const itemsContent = document.querySelector('.hero-items-content');
+    if (itemsContent) itemsContent.scrollTop = previousItemsScrollTop;
+    window.scrollTo(0, previousPageScrollY);
+  });
+  $('#hero-back').onclick = () => { state.hero = ''; state.heroSlot = 'all'; state.heroQuery = ''; loadCatalog(); };
+  $('#hero-search').oninput = (event) => { state.heroQuery = event.target.value; clearTimeout(window.heroSearchTimer); window.heroSearchTimer = setTimeout(loadCatalog, 220); };
+  document.querySelectorAll('.hero-slot-list [data-slot]').forEach((node) => node.onclick = () => { state.heroSlot = node.dataset.slot; renderHeroDetail(); });
+  document.querySelectorAll('.hero-workspace [data-action]').forEach((node) => node.onclick = () => action(node.dataset.action, node.dataset.id));
+  bindInlineHeroCosmetics(cosmeticData, cosmeticHero);
+  if (!cosmeticData && !state.cosmeticsLoading) {
+    state.cosmeticsLoading = true;
+    call('cosmetics:list').then((data) => {
+      state.data.cosmetics = data;
+      state.cosmeticsDraft ||= { ...(data.picks || {}) };
+    }).catch((error) => { state.data.cosmetics = { heroes: [], error: error.message }; }).finally(() => {
+      state.cosmeticsLoading = false;
+      if (state.view === 'mods' && normalizeHeroId(state.hero) === heroKey) renderHeroDetail();
+    });
+  }
+}
 function patchNotesText(ru, en) { return state.data?.settings?.appLanguage === 'ru' ? ru : en; }
 function renderPatchNotesContent() {
   const isRussian = state.data?.settings?.appLanguage === 'ru';
   const sections = isRussian ? [
-    ['01', 'Темы и кастомизация', 'Добавлен каталог тем VANTA: выбирайте встроенные и пользовательские темы, импортируйте свои оформления и настраивайте интерфейс. Темы сообщества доступны в каталоге и профилях авторов.'],
-    ['02', 'Погода и башни', 'Добавлены погодные эффекты и башни для Dota 2. Устанавливайте и настраивайте их через VANTA.'],
-    ['03', 'Визуальные исправления и оптимизация', 'Исправлены ошибки интерфейса, улучшены производительность и отзывчивость приложения.'],
+    { title: 'Полностью переработана система скинов', bullets: ['<strong>10 500+ скинов</strong> теперь доступны в приложении!', 'Выбирайте любой скин и устанавливайте его на любого героя.', 'Добавляйте к скинам любые <strong>Unusual-эффекты</strong> и создавайте собственные комбинации.', 'Полностью обновлена система управления и установки модификаций.'] },
+    { title: 'Обновлённый интерфейс', bullets: ['Улучшена навигация и взаимодействие с системой скинов.', 'Работа с модификациями стала удобнее.'] },
+    { title: 'Исправления и улучшения', bullets: ['Исправлены различные ошибки.', 'Улучшена стабильность работы приложения.', 'Проведена дополнительная оптимизация внутренних систем.'] },
   ] : [
-    ['01', 'Themes and customization', 'Added the VANTA theme catalog: choose built-in and community themes, import your own designs, and customize the interface. Community themes are also listed on their authors’ profiles.'],
-    ['02', 'Weather and towers', 'Dota 2 weather effects and towers are now available to install and customize through VANTA.'],
-    ['03', 'Visual fixes and optimization', 'Fixed interface issues and improved application performance and responsiveness.'],
+    { title: 'Completely redesigned skin system', bullets: ['<strong>10,500+ skins</strong> are now available in the app!', 'Choose any skin and install it on any hero.', 'Add any <strong>Unusual effects</strong> to skins and create your own combinations.', 'The mod management and installation system has been completely updated.'] },
+    { title: 'Updated interface', bullets: ['Improved navigation and interaction with the skin system.', 'Managing mods is now more convenient.'] },
+    { title: 'Fixes and improvements', bullets: ['Fixed various bugs.', 'Improved application stability.', 'Further optimized internal systems.'] },
   ];
-  return `<div class="patch-notes-banner"><span>VANTA UPDATE · 2.0.12</span></div><div class="patch-notes-body"><p class="eyebrow">${isRussian ? 'ЧТО НОВОГО' : 'WHAT’S NEW'}</p><h2 id="patch-notes-title">${isRussian ? 'Патчноут 2.0.12' : 'Patch notes 2.0.12'}</h2><p class="patch-notes-intro">${isRussian ? 'Новые возможности и улучшения приложения.' : 'New features and improvements.'}</p><div class="patch-notes-list">${sections.map(([number, title, description]) => `<article class="patch-notes-item"><span class="patch-notes-number">${number}</span><div><h3>${title}</h3><p>${description}</p></div></article>`).join('')}</div><div class="patch-notes-footer"><span>${isRussian ? 'Спасибо, что пользуетесь VANTA' : 'Thanks for using VANTA'}</span><b>VANTA · 2.0.12</b></div></div>`;
+  const list = sections.map((section, index) => `<article class="patch-notes-item"><span class="patch-notes-number">${index + 1}</span><div><h3>${section.title}</h3><ul>${section.bullets.map((bullet) => `<li>${bullet}</li>`).join('')}</ul></div></article>`).join('');
+  const intro = isRussian ? 'Главное обновление системы скинов и управления модификациями.' : 'A major update to the skin system and mod management.';
+  return `<div class="patch-notes-banner"><span>VANTA UPDATE · 2.0.13</span></div><div class="patch-notes-body"><p class="eyebrow">${isRussian ? 'ЧТО НОВОГО' : 'WHAT’S NEW'}</p><h2 id="patch-notes-title">${isRussian ? 'Патчноут 2.0.13' : 'Patch notes 2.0.13'}</h2><p class="patch-notes-intro">${intro}</p><div class="patch-notes-list">${list}</div><div class="patch-notes-footer"><span>${isRussian ? 'Спасибо, что пользуетесь VANTA' : 'Thanks for using VANTA'}</span><b>VANTA · 2.0.13</b></div></div>`;
 }
 function openPatchNotes() {
   const dialog = $('#patch-notes');
@@ -584,11 +681,8 @@ function closePatchNotes() {
   fallbackTimer = setTimeout(finish, 240);
 }
 function renderFeatured(mods) {
-  const featured = [...mods].sort((left, right) => right.downloads - left.downloads).slice(0, 5);
-  const patchNotesSlide = `<article class="featured-slide featured-patch-notes active" data-slide="0" style="--featured-image:url('https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/patchno.jpg')"><div class="featured-shade"></div><div class="featured-copy"><span class="featured-kicker">VANTA UPDATE · 2.0.12</span><h2>${patchNotesText('Патчноут 2.0.12', 'Patch notes 2.0.12')}</h2><p>${patchNotesText('Добавлена погода, новые возможности для модов и важные исправления.', 'New weather support, mod features, and important fixes.')}</p><div class="featured-actions"><button class="action patch-notes-open" data-open-patch-notes>${patchNotesText('Подробнее', 'Learn more')} <span aria-hidden="true">↗</span></button></div></div></article>`;
-  const modSlides = featured.map((mod, index) => `<article class="featured-slide" data-slide="${index + 1}" style="--featured-image:url('${mod.previewUrl || ''}')"><div class="featured-shade"></div><div class="featured-copy"><span class="featured-kicker">${t('catalog.featuredFeatured', 'FEATURED MOD')}</span><h2>${mod.name}</h2><p>${mod.description}</p><div class="featured-meta"><span class="download-stat" title="${downloadsLabel(mod.downloads, true)}">${downloadsIcon()} ${mod.downloads.toLocaleString()}</span><span>${CATEGORY_LABELS[mod.categoryId] || mod.categoryId}</span></div><div class="featured-actions"><button class="action" data-action="${state.data.installed?.[mod.id] ? 'uninstall' : 'install'}" data-id="${mod.id}">${state.data.installed?.[mod.id] ? t('catalog.installed', 'Installed') : t('catalog.installMod', 'Install mod')}</button><button class="featured-author" data-featured-author="${mod.author}">${mod.author}</button></div></div></article>`).join('');
-  const slideCount = featured.length + 1;
-  return `<section class="featured" data-featured-index="0"><div class="featured-track">${patchNotesSlide}${modSlides}</div><button class="featured-arrow previous" data-featured-move="-1" aria-label="${t('catalog.featuredPrevious', 'Previous featured mod')}">‹</button><button class="featured-arrow next" data-featured-move="1" aria-label="${t('catalog.featuredNext', 'Next featured mod')}">›</button><div class="featured-dots">${Array.from({ length: slideCount }, (_, index) => `<button class="featured-dot ${index === 0 ? 'active' : ''}" data-featured-dot="${index}" aria-label="${t('catalog.featuredShow', 'Show featured mod')} ${index + 1}"></button>`).join('')}</div></section>`;
+  const patchNotesSlide = `<article class="featured-slide featured-patch-notes active" data-slide="0" style="--featured-image:url('https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/patchno.jpg')"><div class="featured-shade"></div><div class="featured-copy"><span class="featured-kicker">VANTA UPDATE · 2.0.13</span><h2>${patchNotesText('Патчноут 2.0.13', 'Patch notes 2.0.13')}</h2><p>${patchNotesText('10 500+ скинов, Unusual-эффекты и обновлённое управление модификациями.', '10,500+ skins, Unusual effects, and improved mod management.')}</p><div class="featured-actions"><button class="action patch-notes-open" data-open-patch-notes>${patchNotesText('Подробнее', 'Learn more')} <span aria-hidden="true">↗</span></button></div></div></article>`;
+  return `<section class="featured" data-featured-index="0"><div class="featured-track">${patchNotesSlide}</div></section>`;
 }
 $('#close-patch-notes')?.addEventListener('click', closePatchNotes);
 $('#patch-notes')?.addEventListener('click', (event) => {
@@ -611,29 +705,14 @@ function bindFeatured() {
   root.querySelector('[data-open-patch-notes]')?.addEventListener('click', openPatchNotes);
   root.querySelectorAll('[data-featured-move]').forEach((button) => button.onclick = () => show(index + Number(button.dataset.featuredMove)));
   root.querySelectorAll('[data-featured-dot]').forEach((button) => button.onclick = () => show(Number(button.dataset.featuredDot)));
-  root.querySelectorAll('[data-featured-author]').forEach((button) => button.onclick = () => {
-    state.view = 'authors';
-    state.author = button.dataset.featuredAuthor;
-    state.authorQuery = '';
-    state.authorSort = 'default';
-    document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === 'authors'));
-    loadCatalog();
-  });
   root.querySelectorAll('[data-action]').forEach((button) => button.onclick = () => action(button.dataset.action, button.dataset.id));
 }
-function bindCardLinks() { document.querySelectorAll('[data-card-author]').forEach((button) => button.onclick = () => { state.view = 'authors'; state.author = button.dataset.cardAuthor; state.authorQuery = ''; state.authorSort = 'default'; document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === 'authors'));
-  });
-  document.querySelectorAll('[data-card-hero]').forEach((button) => button.onclick = () => { state.view = 'mods'; state.section = 'heroes'; state.hero = button.dataset.cardHero; state.heroSlot = button.dataset.cardSlot || 'all'; document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === 'mods'));
-  });
-  document.querySelectorAll('[data-card-category]').forEach((button) => button.onclick = () => { state.view = 'mods'; state.section = 'all'; state.category = button.dataset.cardCategory; document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === 'mods'));
-  });
+function bindCardLinks() {
+  document.querySelectorAll('[data-card-hero]').forEach((button) => button.onclick = () => { state.view = 'mods'; state.section = 'heroes'; state.hero = button.dataset.cardHero; state.heroSlot = button.dataset.cardSlot || 'all'; loadCatalog(); });
+  document.querySelectorAll('[data-card-category]').forEach((button) => button.onclick = () => { state.view = 'mods'; state.section = 'all'; state.category = button.dataset.cardCategory; loadCatalog(); });
 }
-function renderAuthors() { const authors = state.data.authors || []; if (state.author) return renderAuthorProfile(authors.find((author) => author.name.toLowerCase() === state.author.toLowerCase()) || { name: state.author, count: state.data.mods.length }); $('#content').innerHTML = `<div class="authors-intro"><p class="eyebrow">${t('catalog.authorIntro')}</p><h2>${t('catalog.authorTitle')}</h2><p>${t('catalog.discover_creators')}</p></div><div class="author-grid">${authors.map((author) => `<button class="author-card" data-author="${author.name.replace(/"/g, '&quot;')}">${author.avatarUrl ? `<img class="author-avatar" src="${author.avatarUrl}" alt="">` : `<span class="author-avatar">${author.name.slice(0, 1).toUpperCase()}</span>`}<span><strong>${author.name}</strong><small>${formatTranslation(t('catalog.authorMods', '{count} mods'), { count: author.count })}</small></span><span class="author-arrow">→</span></button>`).join('')}</div>`; document.querySelectorAll('[data-author]').forEach((node) => node.onclick = () => { state.view = 'authors'; state.author = node.dataset.author; state.authorQuery = ''; state.authorSort = 'default'; loadCatalog(); });
-}
-function renderAuthorProfile(author) { let mods = [...(state.data.mods || [])]; if (state.authorQuery) mods = mods.filter((mod) => mod.name.toLowerCase().includes(state.authorQuery.toLowerCase())); if (state.authorSort === 'name') mods.sort((a, b) => a.name.localeCompare(b.name)); if (state.authorSort === 'date') mods.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))); const isDota2Pornfx = /^dota2pornfx$/i.test(author.name); const links = Object.entries(author.links || {}).filter(([type, url]) => url && !(isDota2Pornfx && /^website$/i.test(type)));
-const socialLinks = isDota2Pornfx && author.authorLink ? [...links, ['Website', author.authorLink]] : links;
-$('#content').innerHTML = `<button class="back-link" id="author-back">← ${t('catalog.backToAuthors', 'Back to authors')}</button><section class="author-profile"><div class="author-profile-head">${author.avatarUrl ? `<img class="author-profile-avatar" src="${author.avatarUrl}" alt="">` : `<span class="author-profile-avatar">${author.name.slice(0, 1).toUpperCase()}</span>`}<div class="author-profile-copy"><p class="eyebrow">${t('catalog.authorProfile', 'AUTHOR PROFILE')}</p><h2>${author.name}</h2>${socialLinks.length ? `<div class="author-links">${socialLinks.map(([type, url]) => `<a href="${url}" target="_blank" rel="noreferrer">${type}</a>`).join('')}</div>` : ''}<p>${author.bio || t('catalog.authorBio', 'Creator of Dota 2 cosmetic modifications.')}</p></div></div><div class="author-tools"><input id="author-mod-search" type="search" placeholder="${t('catalog.searchAuthorMods', 'Search this author’s mods')}" value="${state.authorQuery}"><select id="author-mod-sort"><option value="default">${t('catalog.defaultSort', 'Default')}</option><option value="date" ${state.authorSort === 'date' ? 'selected' : ''}>${t('catalog.newestFirst', 'Newest first')}</option><option value="name" ${state.authorSort === 'name' ? 'selected' : ''}>${t('catalog.nameAZ', 'Name A-Z')}</option></select></div><div class="author-mods-heading"><span>${formatTranslation(t('catalog.authorMods', '{count} mods'), { count: mods.length })}</span></div><div class="mod-grid">${mods.length ? mods.map(card).join('') : `<div class="empty"><strong>${t('catalog.noMods', 'No mods found')}</strong>${t('catalog.authorEmpty', 'This author has no matching mods.')}</div>`}</div></section>`; $('#author-back').onclick = () => { state.author = ''; state.authorQuery = ''; loadCatalog(); }; $('#author-mod-search').oninput = (event) => { state.authorQuery = event.target.value; clearTimeout(window.authorSearchTimer); window.authorSearchTimer = setTimeout(loadCatalog, 220); }; $('#author-mod-sort').onchange = (event) => { state.authorSort = event.target.value; renderAuthorProfile(author); }; document.querySelectorAll('[data-action]').forEach((node) => node.onclick = () => action(node.dataset.action, node.dataset.id));
-}
+function renderAuthors() { state.view = 'installed'; return renderLibrary(); }
+function renderAuthorProfile() { state.view = 'installed'; return renderLibrary(); }
 function formatModDate(value) { const date = new Date(value); if (Number.isNaN(date.getTime())) return t('catalog.dateUnknown', 'Date unavailable'); const locale = state.data?.settings?.appLanguage === 'ru' ? 'ru-RU' : 'en-US'; return date.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 function releasedLabel() { return t('catalog.released', 'Released'); }
@@ -645,19 +724,33 @@ function isHiddenAuthor(name) { return /^unknown(?: author)?$/i.test(String(name
 }
 function getAuthorCardProfile(name) { return state.data.authors?.find((author) => author.name.toLowerCase() === name.toLowerCase()) || null;
 }
-function card(mod) { const installed = state.data.installed?.[mod.id]; const hasUpdate = installed && installed.version !== mod.version; const authorName = String(mod.author || '').trim(); const hasAuthor = authorName && !/^anonymous$/i.test(authorName); const author = hasAuthor ? getAuthorCardProfile(authorName) : null; const preview = mod.previewUrl ? `<img class="preview" loading="lazy" src="${mod.previewUrl}" alt="">` : '<div class="preview preview-empty">◈</div>';
-const chips = [`<button class="card-chip" data-card-category="${mod.categoryId}">${CATEGORY_LABELS[mod.categoryId] || mod.categoryId}</button>`, mod.hero ? `<button class="card-chip" data-card-hero="${mod.hero}">${mod.heroLabel || mod.hero}</button>` : '', mod.slot ? `<button class="card-chip" data-card-slot="${mod.slot}" data-card-hero="${mod.hero || ''}">${slotLabel(mod.slot)}</button>` : ''].join(''); const authorHtml = hasAuthor ? `<button class="author-link" data-card-author="${authorName}">${author?.avatarUrl ? `<img src="${author.avatarUrl}" alt="">` : '<span class="author-fallback">' + authorName.slice(0, 1).toUpperCase() + '</span>'}<span>${authorName}</span></button>` : `<span class="no-author">${t('catalog.noAuthor', 'Community mod')}</span>`; return `<article class="mod-card"><button class="open-card" data-action="details" data-id="${mod.id}" style="display:block;width:100%;padding:0;border:0;background:none;color:inherit;text-align:left">${preview}</button><div class="card-body"><div class="card-top"><div class="mod-name" title="${mod.name}">${mod.name}</div></div><div class="card-author">${authorHtml}</div><div class="card-chips">${chips}</div><div class="card-date">${releasedLabel()} ${formatModDate(mod.createdAt)}</div><div class="card-footer"><span class="badge">${hasUpdate ? t('catalog.updateAvailable', 'Update available') : installed ? t('catalog.installed', 'Installed') : mod.slot || t('catalog.cosmetic', 'Cosmetic')}</span><button class="action ${installed && !hasUpdate ? 'secondary' : ''}" data-action="${hasUpdate ? 'update' : installed ? 'uninstall' : 'install'}" data-id="${mod.id}">${hasUpdate ? t('catalog.update', 'Update') : installed ? t('catalog.uninstall', 'Uninstall') : t('catalog.installMod', 'Install mod')}</button><span class="download-count">${downloadsLabel(mod.downloads)}</span></div></div></article>`;
-}
-function renderSettings() { const path = state.data.gamePath || t('settings.notConfigured', 'Not configured'); const settings = state.data.settings || {}; const language = settings.appLanguage || 'en'; const enabled = (value) => value ? t('settings.toggleEnabled', 'Enabled') : t('settings.toggleDisabled', 'Disabled'); $('#content').innerHTML = `<div class="settings-panel"><h2>${t('settings.title', 'Settings')}</h2><p>${t('catalog.settingsDescription', 'Control the game connection, interface behavior and update preferences.')}</p><div class="setting-row"><div><strong>${t('settings.pathLabel', 'Dota 2 installation')}</strong><div class="setting-value" title="${path}">${path}</div></div><div><button id="detect-game" class="action secondary">${t('settings.autoDetect', 'Auto detect')}</button><button id="browse-game" class="action">${t('settings.browse', 'Browse')}</button></div></div><div class="setting-row"><div><strong>${t('settings.languageFolder', 'Language folder')}</strong><div class="setting-value">${settings.langSuffix || 'russian'}</div></div><select id="language-folder"><option value="russian">${t('settings.languages.ru', 'Russian')}</option><option value="english">${t('settings.languages.en', 'English')}</option><option value="schinese">${t('settings.languages.zh', 'Simplified Chinese')}</option></select></div><div class="setting-row"><div><strong>${t('settings.appLanguage', 'Application language')}</strong><div class="setting-value">${t('settings.languageHint', 'VANTA interface language')}</div></div><select id="app-language"><option value="en">${t('settings.languages.en', 'English')}</option><option value="ru">${t('settings.languages.ru', 'Russian')}</option></select></div><div class="setting-row"><div><strong>${t('settings.autoUpdate', 'Auto update')}</strong><div class="setting-value">${t('settings.autoUpdateHint', 'Check for VANTA updates')}</div></div><button id="auto-update" class="toggle-button ${settings.autoUpdateEnabled !== false ? 'on' : ''}">${enabled(settings.autoUpdateEnabled !== false)}</button></div><div class="setting-row"><div><strong>${t('settings.scale', 'Interface scale')}</strong><div class="setting-value">${t('settings.scaleHint', 'Adjust interface density')}</div></div><div class="scale-control"><input id="interface-scale" type="range" min="0.8" max="1.4" step="0.05" value="${settings.interfaceScale || 1}"><output id="interface-scale-value">${Number(settings.interfaceScale || 1).toFixed(2)}×</output><button id="reset-interface-scale" class="action secondary">${t('settings.reset', 'Reset')}</button></div></div><div class="setting-row"><div><strong>${t('settings.discordActivity', 'Discord activity')}</strong><div class="setting-value">${t('settings.discordActivityHint', 'Show VANTA activity in Discord')}</div></div><button id="discord-activity" class="toggle-button ${settings.discordActivityEnabled ? 'on' : ''}">${enabled(settings.discordActivityEnabled)}</button></div><div class="setting-row"><div><strong>${t('settings.catalogSource', 'Catalog source')}</strong><div class="setting-value">GitHub · artem-prime42/dota2-mod-manager-catalog</div></div><span class="badge">${t('settings.catalogExternal', 'External')}</span></div></div>`; const set = async (key, value) => { state.data = await call('settings:set', { key, value }); renderSettings(); }; $('#detect-game').onclick = async () => { try { state.data = await call('game:detect'); updateGameStatus(state.data.gamePath); renderSettings(); toast(state.data.gamePath ? formatTranslation(t('settings.gameReadyStatus', 'Dota 2 ready · {path}'), { path: state.data.gamePath }) : t('settings.gameMissingStatus', 'Dota 2 not found — set the path in settings')); } catch (error) { toast(error.message); } }; $('#browse-game').onclick = async () => { try { state.data = await call('game:set-path'); updateGameStatus(state.data.gamePath); renderSettings(); } catch (error) { toast(error.message); } }; $('#language-folder').value = settings.langSuffix || 'russian'; $('#app-language').value = language; $('#language-folder').onchange = (event) => set('langSuffix', event.target.value); $('#app-language').onchange = (event) => set('appLanguage', event.target.value); $('#auto-update').onclick = () => set('autoUpdateEnabled', settings.autoUpdateEnabled === false); $('#discord-activity').onclick = () => set('discordActivityEnabled', !settings.discordActivityEnabled); $('#interface-scale').oninput = (event) => { document.documentElement.style.setProperty('--app-ui-scale', event.target.value); $('#interface-scale-value').value = `${Number(event.target.value).toFixed(2)}×`; }; $('#interface-scale').onchange = (event) => set('interfaceScale', Number(event.target.value)); $('#reset-interface-scale').onclick = () => { document.documentElement.style.setProperty('--app-ui-scale', '1'); set('interfaceScale', 1); }; }
-async function action(type, id) { try { if (type === 'details') return showDetails(id); if (type === 'favorite') state.data = await call('favorite:toggle', { id }); const currentCatalog = { mods: state.data.mods, categories: state.data.categories }; if (type === 'install' || type === 'update') { const mod = state.data.mods.find((item) => item.id === id) || state.data.authorThemes?.find((item) => item.id === id); const operation = mod?.modType === 'theme' ? 'theme-install' : mod?.modType === 'special_patch' ? 'special-patch' : 'mod-install'; updateDownloadProgress({ id, name: mod?.name || id, operation, state: 'downloading', phase: downloadProgressText('Подготовка скачивания…', 'Preparing download…'), percent: null }); toast(type === 'update' ? t('catalog.downloadingUpdate', 'Downloading update...') : t('catalog.downloadingInstall', 'Downloading and installing...')); state.data = { ...await call(type === 'update' ? 'mod:update' : 'mod:install', { id }), ...currentCatalog }; updateDownloadProgress({ id, name: mod?.name || id, operation, state: 'completed', phase: type === 'update' ? downloadProgressText('Мод обновлён', 'Mod updated') : downloadProgressText('Мод установлен', 'Mod installed'), percent: 100 }); toast(type === 'update' ? t('catalog.modUpdated', 'Mod updated.') : t('catalog.modInstalled', 'Mod installed.')); } if (type === 'uninstall') { const modName = state.data.mods.find((mod) => mod.id === id)?.name || id; const confirmation = await showAppConfirmDialog({ title: t('catalog.removeInstalledModTitle', 'Remove mod'), message: formatTranslation(t('catalog.removeInstalledModMessage', 'Remove "{name}" from the library?'), { name: modName }), confirmLabel: t('catalog.uninstall', 'Uninstall'), destructive: true }); if (!confirmation.confirmed) return; state.data = { ...await call('mod:uninstall', { id }), ...currentCatalog }; toast(t('catalog.modRemoved', 'Mod removed.')); } render(); } catch (error) { if (type === 'install' || type === 'update') { const mod = state.data.mods.find((item) => item.id === id) || state.data.authorThemes?.find((item) => item.id === id); updateDownloadProgress({ id, name: mod?.name || id, operation: mod?.modType === 'theme' ? 'theme-install' : mod?.modType === 'special_patch' ? 'special-patch' : 'mod-install', state: 'failed', phase: downloadProgressText('Операция не выполнена', 'Operation failed'), error: error.message }); } toast(error.message); } }
-function showDetails(id) { const mod = state.data.mods.find((item) => item.id === id) || (() => { const theme = state.data.authorThemes?.find((item) => item.id === id); return theme ? { ...theme, previewUrl: theme.previewUrl || theme.preview || null, categoryId: 'themes', modType: 'theme' } : null; })(); if (!mod) return; const installed = state.data.installed?.[id];
+function card(mod) { const installed = getInstalledRecord(mod.id);
+const hasUpdate = installed && installed.version !== mod.version;
 const authorName = String(mod.author || '').trim();
 const hasAuthor = authorName && !/^anonymous$/i.test(authorName);
-const author = hasAuthor ? getAuthorCardProfile(authorName) : null;
-const videoButton = isVideoPreview(mod.videoUrl) ? `<button class="action secondary preview-action details-preview-button" data-preview-url="${mod.videoUrl}" data-preview-title="${mod.name}">${t('catalog.preview', 'Preview')}</button>` : '';
-$('#details-content').innerHTML = `${mod.previewUrl ? `<img class="details-hero" src="${mod.previewUrl}" alt="">` : ''}<div class="details-body"><div class="eyebrow">${CATEGORY_LABELS[mod.categoryId] || mod.categoryId} ${mod.heroLabel ? `· ${mod.heroLabel}` : ''}</div><h2>${mod.name}</h2>${hasAuthor ? `<button class="author-link" data-card-author="${authorName}">${author?.avatarUrl ? `<img src="${author.avatarUrl}" alt="">` : '<span class="author-fallback">' + authorName.slice(0, 1).toUpperCase() + '</span>'}<span>${authorName}</span></button>` : ''}<div class="meta">${releasedLabel()} ${formatModDate(mod.createdAt)}</div><p>${mod.description}</p><div class="card-chips"><button class="card-chip" data-card-category="${mod.categoryId}">${CATEGORY_LABELS[mod.categoryId] || mod.categoryId}</button>${mod.hero ? `<button class="card-chip" data-card-hero="${mod.hero}">${mod.heroLabel || mod.hero}</button>` : ''}${mod.slot ? `<button class="card-chip" data-card-slot="${mod.slot}" data-card-hero="${mod.hero || ''}">${slotLabel(mod.slot)}</button>` : ''}</div><div class="details-actions">${videoButton}<button class="action ${installed ? 'secondary' : ''}" data-action="${installed ? 'uninstall' : 'install'}" data-id="${id}">${installed ? t('catalog.uninstall', 'Uninstall') : t('catalog.installMod', 'Install mod')}</button></div></div>`; $('#details').showModal(); bindPreviewButtons(); document.querySelectorAll('#details [data-action]').forEach((node) => node.onclick = async () => { $('#details').close(); await action(node.dataset.action, node.dataset.id); });
+const preview = mod.previewUrl ? `<img class="preview" loading="lazy" src="${escapeHtml(mod.previewUrl)}" alt="">` : '<div class="preview preview-empty">◈</div>';
+const chips = [`<button class="card-chip" data-card-category="${escapeHtml(mod.categoryId)}">${CATEGORY_LABELS[mod.categoryId] || mod.categoryId}</button>`, mod.hero ? `<button class="card-chip" data-card-hero="${escapeHtml(mod.hero)}">${escapeHtml(mod.heroLabel || mod.hero)}</button>` : '', mod.slot ? `<button class="card-chip" data-card-slot="${escapeHtml(mod.slot)}" data-card-hero="${escapeHtml(mod.hero || '')}">${slotLabel(mod.slot)}</button>` : ''].join('');
+return `<article class="mod-card"><button class="open-card" data-action="details" data-id="${escapeHtml(mod.id)}">${preview}</button><div class="card-body"><div class="card-top"><div class="mod-name" title="${escapeHtml(mod.name)}">${escapeHtml(mod.name)}</div></div><div class="card-author">${hasAuthor ? `<span class="mod-author-text">${escapeHtml(authorName)}</span>` : `<span class="no-author">${t('catalog.noAuthor', 'Community mod')}</span>`}</div><div class="card-chips">${chips}</div><div class="card-date">${releasedLabel()} ${formatModDate(mod.createdAt)}</div><div class="card-footer"><span class="badge">${hasUpdate ? t('catalog.updateAvailable', 'Update available') : installed ? t('catalog.installed', 'Installed') : t('catalog.cosmetic', 'Cosmetic')}</span><button class="action ${installed && !hasUpdate ? 'secondary' : ''}" data-action="${hasUpdate ? 'update' : installed ? 'uninstall' : 'install'}" data-id="${escapeHtml(mod.id)}">${hasUpdate ? t('catalog.update', 'Update') : installed ? t('catalog.uninstall', 'Uninstall') : t('catalog.installMod', 'Install mod')}</button><span class="download-count">${downloadsLabel(mod.downloads)}</span></div></div></article>`;
 }
-document.querySelectorAll('.nav-item').forEach((node) => node.onclick = () => { const nextView = node.dataset.view; if (nextView === 'themes') state.themeReturnView = state.view === 'themes' ? state.themeReturnView : state.view; state.view = nextView; state.category = 'all'; state.hero = ''; if (state.view !== 'authors') state.author = ''; window.scrollTo(0, 0); document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item === node)); if (state.view === 'settings' || state.view === 'themes') { render(); return; } loadCatalog(); }); document.querySelectorAll('.top-tab').forEach((node) => node.onclick = () => { state.section = node.dataset.top; state.category = 'all'; state.hero = ''; state.view = node.dataset.top === 'all' ? 'discover' : 'mods'; window.scrollTo(0, 0); document.querySelectorAll('.top-tab').forEach((item) => item.classList.toggle('active', item === node)); document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === state.view)); loadCatalog(); }); $('#search').oninput = (event) => { state.query = event.target.value; clearTimeout(window.searchTimer); window.searchTimer = setTimeout(loadCatalog, 220); }; $('#refresh').onclick = async () => { $('#refresh').classList.add('loading'); try { state.data = await call('catalog:refresh'); toast(t('catalog.updated', 'Catalog updated.')); loadCatalog(); } catch (error) { toast(error.message); } finally { $('#refresh').classList.remove('loading'); } }; $('#close-details').onclick = () => $('#details').close(); window.vanta.onDownloadProgress((event) => { if (event.state === 'failed' && event.operation !== 'special-patch') toast(`${t('catalog.downloadFailed', 'Download failed')}: ${event.error}`); });
+function renderSettings() { const path = state.data.gamePath || t('settings.notConfigured', 'Not configured'); const settings = state.data.settings || {}; const language = settings.appLanguage || 'en'; const enabled = (value) => value ? t('settings.toggleEnabled', 'Enabled') : t('settings.toggleDisabled', 'Disabled'); $('#content').innerHTML = `<div class="settings-panel"><h2>${t('settings.title', 'Settings')}</h2><p>${t('catalog.settingsDescription', 'Control the game connection, interface behavior and update preferences.')}</p><div class="setting-row"><div><strong>${t('settings.pathLabel', 'Dota 2 installation')}</strong><div class="setting-value" title="${path}">${path}</div></div><div><button id="detect-game" class="action secondary">${t('settings.autoDetect', 'Auto detect')}</button><button id="browse-game" class="action">${t('settings.browse', 'Browse')}</button></div></div><div class="setting-row"><div><strong>${t('settings.languageFolder', 'Language folder')}</strong><div class="setting-value">${settings.langSuffix || 'russian'}</div></div><select id="language-folder"><option value="russian">${t('settings.languages.ru', 'Russian')}</option><option value="english">${t('settings.languages.en', 'English')}</option><option value="schinese">${t('settings.languages.zh', 'Simplified Chinese')}</option></select></div><div class="setting-row"><div><strong>${t('settings.appLanguage', 'Application language')}</strong><div class="setting-value">${t('settings.languageHint', 'VANTA interface language')}</div></div><select id="app-language"><option value="en">${t('settings.languages.en', 'English')}</option><option value="ru">${t('settings.languages.ru', 'Russian')}</option></select></div><div class="setting-row"><div><strong>${t('settings.autoUpdate', 'Auto update')}</strong><div class="setting-value">${t('settings.autoUpdateHint', 'Check for VANTA updates')}</div></div><button id="auto-update" class="toggle-button ${settings.autoUpdateEnabled !== false ? 'on' : ''}">${enabled(settings.autoUpdateEnabled !== false)}</button></div><div class="setting-row"><div><strong>${t('settings.scale', 'Interface scale')}</strong><div class="setting-value">${t('settings.scaleHint', 'Adjust interface density')}</div></div><div class="scale-control"><input id="interface-scale" type="range" min="0.8" max="1.4" step="0.05" value="${settings.interfaceScale || 1}"><output id="interface-scale-value">${Number(settings.interfaceScale || 1).toFixed(2)}×</output><button id="reset-interface-scale" class="action secondary">${t('settings.reset', 'Reset')}</button></div></div><div class="setting-row"><div><strong>${t('settings.discordActivity', 'Discord activity')}</strong><div class="setting-value">${t('settings.discordActivityHint', 'Show VANTA activity in Discord')}</div></div><button id="discord-activity" class="toggle-button ${settings.discordActivityEnabled ? 'on' : ''}">${enabled(settings.discordActivityEnabled)}</button></div><div class="setting-row"><div><strong>${t('settings.catalogSource', 'Cosmetic data source')}</strong><div class="setting-value">${state.data.gamePath ? 'Dota 2 · items_game.txt' : t('settings.notConfigured', 'Not configured')}</div></div><span class="badge">${state.data.gamePath ? 'LOCAL' : 'OFFLINE'}</span></div></div>`; const set = async (key, value) => { state.data = await call('settings:set', { key, value }); renderSettings(); }; $('#detect-game').onclick = async () => { try { state.data = await call('game:detect'); updateGameStatus(state.data.gamePath); renderSettings(); toast(state.data.gamePath ? formatTranslation(t('settings.gameReadyStatus', 'Dota 2 ready · {path}'), { path: state.data.gamePath }) : t('settings.gameMissingStatus', 'Dota 2 not found — set the path in settings')); } catch (error) { toast(error.message); } }; $('#browse-game').onclick = async () => { try { state.data = await call('game:set-path'); updateGameStatus(state.data.gamePath); renderSettings(); } catch (error) { toast(error.message); } }; $('#language-folder').value = settings.langSuffix || 'russian'; $('#app-language').value = language; $('#language-folder').onchange = (event) => set('langSuffix', event.target.value); $('#app-language').onchange = (event) => set('appLanguage', event.target.value); $('#auto-update').onclick = () => set('autoUpdateEnabled', settings.autoUpdateEnabled === false); $('#discord-activity').onclick = () => set('discordActivityEnabled', !settings.discordActivityEnabled); $('#interface-scale').oninput = (event) => { document.documentElement.style.setProperty('--app-ui-scale', event.target.value); $('#interface-scale-value').value = `${Number(event.target.value).toFixed(2)}×`; }; $('#interface-scale').onchange = (event) => set('interfaceScale', Number(event.target.value)); $('#reset-interface-scale').onclick = () => { document.documentElement.style.setProperty('--app-ui-scale', '1'); set('interfaceScale', 1); }; }
+async function action(type, id) { try { if (type === 'details') return showDetails(id); if (type === 'favorite') state.data = await call('favorite:toggle', { id }); const currentCatalog = { mods: state.data.mods, categories: state.data.categories }; if (type === 'install' || type === 'update') { const mod = state.data.mods.find((item) => item.id === id) || state.data.authorThemes?.find((item) => item.id === id); const operation = mod?.modType === 'theme' ? 'theme-install' : mod?.modType === 'special_patch' ? 'special-patch' : 'mod-install'; updateDownloadProgress({ id, name: mod?.name || id, operation, state: 'downloading', phase: downloadProgressText('Подготовка скачивания…', 'Preparing download…'), percent: null }); toast(type === 'update' ? t('catalog.downloadingUpdate', 'Downloading update...') : t('catalog.downloadingInstall', 'Downloading and installing...')); state.data = { ...await call(type === 'update' ? 'mod:update' : 'mod:install', { id }), ...currentCatalog }; updateDownloadProgress({ id, name: mod?.name || id, operation, state: 'completed', phase: type === 'update' ? downloadProgressText('Мод обновлён', 'Mod updated') : downloadProgressText('Мод установлен', 'Mod installed'), percent: 100 }); toast(type === 'update' ? t('catalog.modUpdated', 'Mod updated.') : t('catalog.modInstalled', 'Mod installed.')); } if (type === 'uninstall') { const modName = state.data.mods.find((mod) => mod.id === id)?.name || id; const confirmation = await showAppConfirmDialog({ title: t('catalog.removeInstalledModTitle', 'Remove mod'), message: formatTranslation(t('catalog.removeInstalledModMessage', 'Remove "{name}" from the library?'), { name: modName }), confirmLabel: t('catalog.uninstall', 'Uninstall'), destructive: true }); if (!confirmation.confirmed) return; state.data = { ...await call('mod:uninstall', { id }), ...currentCatalog }; toast(t('catalog.modRemoved', 'Mod removed.')); } render(); } catch (error) { if (type === 'install' || type === 'update') { const mod = state.data.mods.find((item) => item.id === id) || state.data.authorThemes?.find((item) => item.id === id); updateDownloadProgress({ id, name: mod?.name || id, operation: mod?.modType === 'theme' ? 'theme-install' : mod?.modType === 'special_patch' ? 'special-patch' : 'mod-install', state: 'failed', phase: downloadProgressText('Операция не выполнена', 'Operation failed'), error: error.message }); } toast(error.message); } }
+function showDetails(id) { const mod = state.data.mods.find((item) => item.id === id);
+if (!mod) return;
+const installed = getInstalledRecord(id);
+const videoButton = isVideoPreview(mod.videoUrl) ? `<button class="action secondary preview-action details-preview-button" data-preview-url="${escapeHtml(mod.videoUrl)}" data-preview-title="${escapeHtml(mod.name)}">${t('catalog.preview', 'Preview')}</button>` : '';
+$('#details-content').innerHTML = `${mod.previewUrl ? `<img class="details-hero" src="${escapeHtml(mod.previewUrl)}" alt="">` : ''}<div class="details-body"><div class="eyebrow">${CATEGORY_LABELS[mod.categoryId] || mod.categoryId} ${mod.heroLabel ? `· ${escapeHtml(mod.heroLabel)}` : ''}</div><h2>${escapeHtml(mod.name)}</h2>${mod.author ? `<p class="details-author">${escapeHtml(mod.author)}</p>` : ''}<div class="meta">${releasedLabel()} ${formatModDate(mod.createdAt)}</div><p>${escapeHtml(mod.description)}</p><div class="card-chips"><button class="card-chip" data-card-category="${escapeHtml(mod.categoryId)}">${CATEGORY_LABELS[mod.categoryId] || mod.categoryId}</button>${mod.hero ? `<button class="card-chip" data-card-hero="${escapeHtml(mod.hero)}">${escapeHtml(mod.heroLabel || mod.hero)}</button>` : ''}${mod.slot ? `<button class="card-chip" data-card-slot="${escapeHtml(mod.slot)}" data-card-hero="${escapeHtml(mod.hero || '')}">${slotLabel(mod.slot)}</button>` : ''}</div><div class="details-actions">${videoButton}<button class="action ${installed ? 'secondary' : ''}" data-action="${installed ? 'uninstall' : 'install'}" data-id="${escapeHtml(id)}">${installed ? t('catalog.uninstall', 'Uninstall') : t('catalog.installMod', 'Install mod')}</button></div></div>`;
+$('#details').showModal();
+bindPreviewButtons();
+document.querySelectorAll('#details [data-action]').forEach((node) => node.onclick = async () => { $('#details').close(); await action(node.dataset.action, node.dataset.id); });
+}
+document.querySelectorAll('.nav-item[data-view]').forEach((node) => node.onclick = () => { const nextView = node.dataset.view; if (nextView === 'themes') state.themeReturnView = state.view === 'themes' ? state.themeReturnView : state.view; state.view = nextView; state.category = 'all'; state.hero = ''; if (nextView === 'mods') state.section = VISIBLE_MOD_SECTIONS.has(state.lastModsSection) ? state.lastModsSection : 'heroes'; if (state.view !== 'authors') state.author = ''; window.scrollTo(0, 0); document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item === node)); if (state.view === 'settings' || state.view === 'themes') { render(); return; } loadCatalog(); }); document.querySelectorAll('.top-tab').forEach((node) => node.onclick = () => { state.section = node.dataset.top; state.lastModsSection = node.dataset.top; state.category = 'all'; state.hero = ''; state.view = 'mods'; window.scrollTo(0, 0); document.querySelectorAll('.top-tab').forEach((item) => item.classList.toggle('active', item === node)); document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === state.view)); loadCatalog(); }); $('#search').oninput = (event) => { state.query = event.target.value; clearTimeout(window.searchTimer); window.searchTimer = setTimeout(loadCatalog, 220); };
+$('#close-details').onclick = () => $('#details').close();
 window.vanta.onDownloadProgress(updateDownloadProgress);
 if (typeof window.addEventListener === 'function') window.addEventListener('keydown', (event) => window.onThemeSearchShortcut?.(event));
-setInterval(refreshCatalogAutomatically, 10 * 60 * 1000); call('app:init').then((data) => { if (data.ok) { state.data = data.data; updateGameStatus(state.data.gamePath); } return loadCatalog(); }).catch(() => loadCatalog());
+$('#play-game')?.addEventListener('click', async () => {
+  try {
+    const result = await call('game:play');
+    if (!result.cancelled) toast(state.data?.settings?.appLanguage === 'ru' ? 'Запуск Dota 2 через Steam…' : 'Launching Dota 2 through Steam…');
+  } catch (error) { toast(error.message); }
+});
+call('app:init').then((data) => { if (data && typeof data === 'object') { state.data = data; const playButton = $('#play-game'); if (playButton) playButton.hidden = !['win32', 'linux'].includes(state.data.platform); updateGameStatus(state.data.gamePath); } return loadCatalog(); }).catch(() => loadCatalog());

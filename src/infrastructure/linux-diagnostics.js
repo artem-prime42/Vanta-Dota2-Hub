@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { VpkReader } = require('vpk-tools');
 const { discoverSteamRoots, parseLibraryPaths } = require('./hero-grid-installer');
-const { findKeyBlock, hasPatchSearchPath, hasPatchSignature, signatureLine, signaturesMatch } = require('../application/special-patch-service');
+const { findKeyBlock, hasPatchSearchPath, hasPatchSignature, LEGACY_SEARCH_PATH, SEARCH_PATH, signatureLine, signaturesMatch } = require('../application/special-patch-service');
 
 const VPK_NAME = /^pak\d+(?:_dir|_\d+)?\.vpk$/i;
 const REDACTED_HOME = '~';
@@ -153,11 +153,13 @@ function parseGameinfo(buffer, gameRoot) {
     const targetPath = !isAbsolutePath && !/[<>*?]/.test(originalValue) ? path.resolve(gameRoot, originalValue) : null;
     return { kind: match[1], value, sourceLine: `${match[1]}\t${value}`, isAbsolutePath, targetExists: targetPath ? fsSync.existsSync(targetPath) : null, resolvedRelativeTarget: targetPath ? displayPath(targetPath) : null };
   });
-  const patchMounts = entries.filter((entry) => ['Game', 'Mod'].includes(entry.kind) && entry.value === 'DotaModdingCommunityMods');
+  const patchMounts = entries.filter((entry) => ['Game', 'Mod'].includes(entry.kind) && entry.value === SEARCH_PATH);
+  const legacyPatchMounts = entries.filter((entry) => ['Game', 'Mod'].includes(entry.kind) && entry.value === LEGACY_SEARCH_PATH);
   const normalizedMounts = entries.filter((entry) => ['Game', 'Mod'].includes(entry.kind)).map((entry) => `${entry.kind}\0${entry.value}`);
   const duplicates = normalizedMounts.filter((value, index) => normalizedMounts.indexOf(value) !== index);
   const invalidPaths = entries.filter((entry) => entry.isAbsolutePath);
-  const mountDirectoryExists = fsSync.existsSync(path.join(gameRoot, 'DotaModdingCommunityMods'));
+  const mountDirectoryExists = fsSync.existsSync(path.join(gameRoot, SEARCH_PATH));
+  const legacyMountDirectoryExists = fsSync.existsSync(path.join(gameRoot, LEGACY_SEARCH_PATH));
   const balanced = Boolean(fileSystem && searchPaths && findKeyBlock(text, 'GameInfo'));
   return {
     syntax: { balancedTopLevelAndFileSystem: balanced, fileSystemBlockFound: Boolean(fileSystem), searchPathsFound: Boolean(searchPaths) },
@@ -167,13 +169,16 @@ function parseGameinfo(buffer, gameRoot) {
     searchPaths: {
       orderedEntries: entries,
       patchMounts,
-      gameMountBeforeBaseDota: entries.findIndex((entry) => entry.kind === 'Game' && entry.value === 'DotaModdingCommunityMods') >= 0
-        && entries.findIndex((entry) => entry.kind === 'Game' && entry.value === 'DotaModdingCommunityMods') < entries.findIndex((entry) => entry.kind === 'Game' && entry.value === 'dota'),
-      modMountPresent: entries.some((entry) => entry.kind === 'Mod' && entry.value === 'DotaModdingCommunityMods'),
+      legacyPatchMounts,
+      gameMountBeforeBaseDota: entries.findIndex((entry) => entry.kind === 'Game' && entry.value === SEARCH_PATH) >= 0
+        && entries.findIndex((entry) => entry.kind === 'Game' && entry.value === SEARCH_PATH) < entries.findIndex((entry) => entry.kind === 'Game' && entry.value === 'dota'),
+      modMountPresent: entries.some((entry) => entry.kind === 'Mod' && entry.value === SEARCH_PATH),
       duplicateSearchPaths: [...new Set(duplicates)].map((value) => value.split('\0')),
       absoluteSearchPaths: invalidPaths,
       mountDirectoryExists,
-      mountPath: displayPath(path.join(gameRoot, 'DotaModdingCommunityMods')),
+      mountPath: displayPath(path.join(gameRoot, SEARCH_PATH)),
+      legacyMountDirectoryExists,
+      legacyMountPath: displayPath(path.join(gameRoot, LEGACY_SEARCH_PATH)),
     },
     containsVantaPatchMarker: hasPatchSearchPath(text),
   };
@@ -504,7 +509,8 @@ async function collectLogInventory(gameRoot, steamRoots) {
   ];
   const candidates = [
     { kind: 'dota-console', file: path.join(gameRoot, 'dota', 'console.log') },
-    { kind: 'dota-console', file: path.join(gameRoot, 'DotaModdingCommunityMods', 'console.log') },
+    { kind: 'dota-console', file: path.join(gameRoot, SEARCH_PATH, 'console.log') },
+    { kind: 'legacy-dota-console', file: path.join(gameRoot, LEGACY_SEARCH_PATH, 'console.log') },
     ...steamRoots.flatMap((root) => ['content_log.txt', 'gameprocess_log.txt', 'console-linux.txt', 'compat_log.txt', 'stderr.txt'].map((name) => ({ kind: 'steam', file: path.join(root, 'logs', name) }))),
   ];
   const result = [];
@@ -592,6 +598,8 @@ async function collectLinuxDiagnostic({ service, appVersion = null, generatedAt 
   const vpkReports = [];
   for (const vpkPath of [primaryPath, aliasPath]) vpkReports.push(await inspectVpk(vpkPath));
   const allDirectoryVpkMetadata = await listVpkMetadata(paths.modDirectory);
+  const legacySpecialPatchVpkMetadata = await Promise.all(paths.legacyModVpkCandidates.map((file) => fileMetadata(file)));
+  const legacySpecialPatchDirectory = await fileMetadata(paths.legacyModDirectory);
   const baseDotaVpkMetadata = await listVpkMetadata(path.dirname(paths.pak01));
   const legacyModsPath = path.join(paths.root, 'dota_mods');
   const legacyModsVpkMetadata = await listVpkMetadata(legacyModsPath);
@@ -682,6 +690,8 @@ async function collectLinuxDiagnostic({ service, appVersion = null, generatedAt 
         selectedSignaturesPath: signaturesPath ? displayPath(signaturesPath) : null,
         signaturesCandidates: signatureInventory,
         modDirectory: await fileMetadata(paths.modDirectory),
+        legacySpecialPatchDirectory,
+        legacySpecialPatchVpkFiles: legacySpecialPatchVpkMetadata,
         pak01DirExists: vpkReports[0].exists,
         pak01AliasExists: vpkReports[1].exists,
         vpkDirectoryFiles: allDirectoryVpkMetadata,
@@ -695,8 +705,9 @@ async function collectLinuxDiagnostic({ service, appVersion = null, generatedAt 
         transaction: 'The service records prior bytes in a transaction journal and restores them on caught failures/startup recovery.',
       },
       weatherTowersVpk: {
-        primaryRelativeName: 'DotaModdingCommunityMods/pak01_dir.vpk',
-        linuxRuntimeAliasRelativeName: 'DotaModdingCommunityMods/pak01.vpk',
+        primaryRelativeName: `${SEARCH_PATH}/pak01_dir.vpk`,
+        linuxRuntimeAliasRelativeName: `${SEARCH_PATH}/pak01.vpk`,
+        legacyDirectoryName: LEGACY_SEARCH_PATH,
         primaryAndAliasSha256Match: Boolean(primaryHash && aliasHash && primaryHash === aliasHash),
         primaryAndAliasSameInode: Boolean(primaryStat && aliasStat && primaryStat.dev === aliasStat.dev && primaryStat.ino === aliasStat.ino),
         primaryVpk: vpkReports[0],

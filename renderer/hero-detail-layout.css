@@ -1,0 +1,73 @@
+.hero-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  height: calc(100vh - 190px);
+  min-height: 520px;
+  max-height: 920px;
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--theme-border, var(--line));
+  border-radius: 10px;
+  background: var(--theme-surface, #0b0d10);
+}
+.hero-preview-pane {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  border-right: 1px solid var(--theme-border, var(--line));
+  background: radial-gradient(ellipse at 52% 48%, rgba(78, 83, 111, .2), transparent 57%), linear-gradient(145deg, #090b12, #11101c 55%, #171126);
+}
+.hero-preview-placeholder {
+  display: grid;
+  align-content: center;
+  justify-self: stretch;
+  justify-items: center;
+  gap: 12px;
+  color: var(--theme-muted, #9298a5);
+  text-align: center;
+}
+.hero-preview-placeholder > span { color: var(--theme-accent, #62cbe9); font-size: 34px; opacity: .75; }
+.hero-preview-placeholder strong { font-size: 14px; font-weight: 500; }
+.hero-preview-actions { width: 100%; padding: 12px; }
+.hero-preview-actions .hero-cosmetic-actions { margin-top: 0; }
+.hero-preview-actions .cosmetics-footer { position: static; padding: 12px; border-radius: 10px; background: color-mix(in srgb, var(--theme-surface, #17191d) 92%, transparent); }
+.hero-preview-actions .cosmetics-footer > div:first-child small { max-width: 220px; line-height: 1.4; }
+.hero-page-heading .eyebrow { margin-bottom: 4px; }
+.hero-page-heading h1 { margin: 0; }
+.hero-page-description { margin: 4px 0 0; color: var(--theme-muted, var(--muted)); font-size: 12px; }
+.hero-items-pane { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
+.hero-items-pane > .hero-detail-head { flex: none; margin: 12px 12px 0; padding: 14px 16px; }
+.hero-items-pane .hero-detail-head h2 { font-size: 22px; }
+.hero-items-layout { display: grid; flex: 1; min-height: 0; grid-template-columns: 126px minmax(0, 1fr); margin-top: 12px; overflow: hidden; }
+.hero-slot-sidebar { min-width: 0; overflow: auto; padding: 14px 10px; border-right: 1px solid var(--theme-border, var(--line)); }
+.hero-slot-sidebar > .eyebrow { padding: 0 7px; color: var(--theme-muted, var(--muted)); font-size: 9px; }
+.hero-slot-list { display: grid; gap: 5px; }
+.hero-slot-list .filter { width: 100%; padding: 8px 9px; border-color: transparent; text-align: left; font-size: 11px; }
+.hero-slot-list .filter.active, .hero-slot-list .filter:hover { border-color: var(--theme-border, var(--line)); background: var(--theme-card, #1a2028); }
+.hero-items-content { min-width: 0; min-height: 0; overflow: auto; padding: 14px; }
+.hero-items-content .hero-search { max-width: none; margin-bottom: 13px; }
+.hero-mod-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; gap: 10px; }
+.hero-mod-grid > .empty { grid-column: 1 / -1; padding: 30px 16px; }
+.hero-mod-grid .mod-card { min-width: 0; }
+.hero-mod-grid .card-body { padding: 9px; }
+.hero-mod-grid .mod-name { font-size: 12px; }
+.hero-mod-grid .card-footer { flex-wrap: wrap; }
+.hero-mod-grid .card-footer .action { padding: 7px 9px; font-size: 10px; }
+.hero-mod-grid .badge, .hero-mod-grid .download-count { font-size: 9px; }
+.hero-items-content .hero-cosmetic-actions { margin-top: 14px; }
+@media (max-width: 1100px) {
+  .hero-workspace { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); }
+  .hero-mod-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .hero-workspace { display: flex; height: auto; max-height: none; min-height: 0; flex-direction: column; }
+  .hero-preview-pane { min-height: 32vh; border-right: 0; border-bottom: 1px solid var(--theme-border, var(--line)); }
+  .hero-preview-actions .cosmetics-footer { align-items: stretch; flex-direction: column; }
+  .hero-preview-actions .cosmetics-footer > div:last-child { justify-content: stretch; }
+  .hero-preview-actions .cosmetics-footer button { flex: 1; }
+  .hero-items-pane { min-height: 65vh; }
+  .hero-items-layout { grid-template-columns: 105px minmax(0, 1fr); }
+  .hero-mod-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

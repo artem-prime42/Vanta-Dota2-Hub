@@ -126,11 +126,10 @@ test('AppService imports and applies a custom theme, restores it after restart, 
   assert.equal(restarted.themeManager.getActiveTheme().colors.background, DEFAULT_THEME.colors.background);
 });
 
-test('AppService installs and removes catalog theme archives through the theme store', async (t) => {
-  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-catalog-theme-install-'));
+test('AppService imports a local theme archive and does not require the online catalog', async (t) => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-local-theme-install-'));
   t.after(() => fs.rm(rootDir, { recursive: true, force: true }));
-  const progress = [];
-  const service = new AppService({ rootDir, onProgress: (event) => progress.push(event) });
+  const service = new AppService({ rootDir });
   await service.storage.init();
   await service.themeManager.init();
   const archivePath = path.join(rootDir, 'crimson-ronin-theme.zip');
@@ -141,40 +140,17 @@ test('AppService installs and removes catalog theme archives through the theme s
     name: 'Crimson Ronin Theme',
     author: 'Papapodzaborniy',
   };
-  const theme = {
-    ...packageTheme,
-    previewUrl: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/Crimson%20Ronin%20Theme.png',
-    downloadUrl: 'https://github.com/artem-prime42/dota2-mods/releases/download/Themes/crimson-ronin-theme.zip',
-  };
   archive.addFile('Crimson Ronin/theme.json', Buffer.from(JSON.stringify(packageTheme), 'utf8'));
   archive.writeZip(archivePath);
-  service.downloads.download = async () => archivePath;
-  service.catalog.mods = [];
-  service.catalog.themes = [theme];
-  await service.themeManager.setCatalogThemes([theme]);
-  const catalogSnapshot = service.snapshot();
-  assert.equal(catalogSnapshot.mods.length, 0);
-  assert.equal(catalogSnapshot.authorThemes[0].id, 'crimson-ronin');
-  assert.ok(catalogSnapshot.authors.some((author) => author.name === 'Papapodzaborniy' && author.avatarUrl));
-
-  const installed = await service.install('crimson-ronin');
-  assert.equal(installed.settings.activeThemeId, 'crimson-ronin');
-  assert.equal(installed.installed['crimson-ronin'].modType, 'theme');
-  assert.ok(installed.themes.some((item) => item.id === 'crimson-ronin' && item.source === 'local'));
-  assert.equal(installed.themes.find((item) => item.id === 'crimson-ronin').preview, theme.previewUrl);
-  assert.ok(progress.some((event) => event.id === 'crimson-ronin' && event.name === 'Crimson Ronin Theme' && event.operation === 'theme-install' && event.phase === 'Importing theme'));
-  assert.ok(progress.some((event) => event.id === 'crimson-ronin' && event.operation === 'theme-install' && event.state === 'completed'));
-
-  const restartedManager = new ThemeManager({ rootDir });
-  await restartedManager.init();
-  await restartedManager.setCatalogThemes([theme]);
-  assert.equal(restartedManager.getThemes().find((item) => item.id === 'crimson-ronin').preview, theme.previewUrl);
-
-  const removed = await service.uninstall('crimson-ronin');
-  assert.equal(removed.settings.activeThemeId, 'vanta-default');
-  assert.equal(removed.installed['crimson-ronin'], undefined);
-  assert.equal(removed.themes.some((item) => item.id === 'crimson-ronin' && item.source === 'catalog'), true);
-  assert.equal(removed.themes.find((item) => item.id === 'crimson-ronin').preview, theme.previewUrl);
+  await service.importTheme(archivePath);
+  const localTheme = service.themeManager.getTheme('crimson-ronin');
+  assert.equal(localTheme.name, 'Crimson Ronin Theme');
+  assert.equal(service.snapshot().themes.find((item) => item.id === 'crimson-ronin').source, 'local');
+  await service.setTheme('crimson-ronin');
+  assert.equal(service.snapshot().settings.activeThemeId, 'crimson-ronin');
+  const removed = await service.removeTheme('crimson-ronin');
+  assert.equal(removed.activeThemeId, 'vanta-default');
+  assert.equal(service.themeManager.getThemes().some((theme) => theme.id === 'crimson-ronin'), false);
 });
 
 test('ThemeManager search is case-insensitive across name, author, and description and accepts remote results', async (t) => {
@@ -381,35 +357,12 @@ test('Glass and AMOLED bundled examples validate, Glass loads its local wallpape
   assert.equal(restarted.getThemes().some((theme) => theme.id === amoled.id), true);
 });
 
-test('catalog themes appear only as a separate read-only source and restore their active selection', async (t) => {
+test('theme collections contain only bundled and imported local themes', async (t) => {
   const { rootDir, manager } = await createManager(t);
-  const catalogTheme = {
-    ...manager.getThemeTemplate(),
-    id: 'community-night',
-    name: 'Community Night',
-    author: 'Theme Maker',
-    description: 'A catalog-provided purple palette.',
-    previewUrl: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/Crimson%20Ronin%20Theme.png',
-    downloadUrl: 'https://github.com/artem-prime42/dota2-mods/releases/download/Themes/crimson-ronin-theme.zip',
-    colors: { ...manager.getThemeTemplate().colors, accent: '#a274ff' },
-  };
-  await manager.setCatalogThemes([catalogTheme]);
-  const listed = manager.getThemes().find((theme) => theme.id === catalogTheme.id);
-  assert.equal(listed.source, 'catalog');
-  assert.equal(listed.author, 'Theme Maker');
-  assert.equal(listed.description, catalogTheme.description);
-  assert.equal(listed.preview, catalogTheme.previewUrl);
-  assert.equal(listed.downloadUrl, catalogTheme.downloadUrl);
-  await assert.rejects(manager.removeTheme(catalogTheme.id), /Catalog themes cannot be removed/);
-  await manager.setActiveTheme(catalogTheme.id);
-
+  assert.equal(typeof manager.setCatalogThemes, 'undefined');
+  assert.ok(manager.getThemes().every((theme) => ['builtin', 'local'].includes(theme.source)));
+  assert.equal(manager.searchThemes(manager.getTheme('vanta-default').name).some((theme) => theme.id === 'vanta-default'), true);
   const restarted = new ThemeManager({ rootDir });
   await restarted.init();
-  assert.equal(restarted.getActiveThemeId(), 'vanta-default', 'remote selection is held as pending until catalog metadata arrives');
-  await restarted.setCatalogThemes([catalogTheme]);
-  assert.equal(restarted.getActiveThemeId(), catalogTheme.id);
-  assert.equal(restarted.getActiveTheme().colors.accent, '#a274ff');
-
-  await restarted.setCatalogThemes([{ ...catalogTheme, previewUrl: 'https://example.com/preview.png' }]);
-  assert.equal(restarted.getThemes().find((theme) => theme.id === catalogTheme.id).preview.startsWith('data:image/svg+xml;'), true);
+  assert.equal(restarted.getThemes().some((theme) => theme.source === 'catalog'), false);
 });

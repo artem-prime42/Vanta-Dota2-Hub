@@ -54,30 +54,22 @@ async function fileStatus(filePath, directory = false) {
 }
 
 async function collectDiagnostics({ service, app, logger }) {
-  const catalog = service.catalog;
   const state = service.storage.state;
-  const cacheStatus = await fileStatus(catalog.cacheFile);
   const stateStatus = await fileStatus(service.storage.file);
   const gamePathStatus = service.gamePath ? await fileStatus(service.gamePath, true) : { exists: false, reason: 'No game path is configured' };
   const languageFolderPath = service.gamePath ? path.join(service.gamePath, `dota_${state.settings.langSuffix || 'russian'}`) : null;
   const languageFolderStatus = languageFolderPath ? await fileStatus(languageFolderPath, true) : { exists: false, reason: 'No game path is configured' };
-  let cacheModCount = null;
-  let cacheError = null;
-  try {
-    const payload = JSON.parse(await fs.readFile(catalog.cacheFile, 'utf8'));
-    cacheModCount = require('../core/models').flattenCatalog(payload).length;
-  } catch (error) {
-    cacheError = error.code === 'ENOENT' ? 'Cache file not found' : error.message;
-  }
+  const vantaModsPath = path.join(service.rootDir, 'VantaMods');
+  const packageFolderStatus = await fileStatus(path.join(vantaModsPath, 'packages'), true);
+  const manifestFolderStatus = await fileStatus(path.join(vantaModsPath, 'manifests'), true);
 
   return {
     generatedAt: new Date().toISOString(),
     app: { name: app.getName(), version: app.getVersion(), isPackaged: app.isPackaged },
     runtime: { platform: process.platform, release: require('node:os').release(), architecture: process.arch, electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
-    paths: { userData: service.rootDir, logFile: logger.logFile, catalogCache: catalog.cacheFile, stateFile: service.storage.file, gamePath: service.gamePath || null, languageFolder: languageFolderPath },
+    paths: { userData: service.rootDir, logFile: logger.logFile, stateFile: service.storage.file, gamePath: service.gamePath || null, languageFolder: languageFolderPath, vantaMods: vantaModsPath },
     migration: service.userDataMigration ? { ...service.userDataMigration, legacyRootsChecked: (service.userDataMigration.legacyRootsChecked || []).map((root) => path.basename(root)) } : null,
-    catalog: { url: catalog.url, loadedModCount: catalog.mods.length, cachedModCount: cacheModCount, cacheError, offline: Boolean(catalog.meta.offline), revision: catalog.meta.revision, updatedAt: catalog.meta.updatedAt, lastAttemptAt: catalog.lastAttemptAt || null, lastError: catalog.lastError || null, cacheFile: cacheStatus },
-    library: { installedModCount: Object.keys(state.installedMods || {}).length, favoriteCount: (state.favorites || []).length, language: state.settings.langSuffix || 'russian', stateFile: stateStatus },
+    library: { installedModCount: Object.keys(state.installedMods || {}).length, favoriteCount: (state.favorites || []).length, language: state.settings.langSuffix || 'russian', stateFile: stateStatus, packageFolder: packageFolderStatus, manifestFolder: manifestFolderStatus, source: 'local', r2Configured: Boolean(state.settings.r2IndexUrl) },
     game: { configured: Boolean(service.gamePath), gamePath: gamePathStatus, languageFolder: languageFolderStatus },
     recentLogs: await logger.getRecentLogs(),
   };
@@ -161,8 +153,7 @@ async function buildDiagnosticArchiveFiles({ service, app, logger }) {
       'VANTA DOTA2 HUB — Diagnostic summary',
       `Generated: ${diagnostics.generatedAt}`,
       `App: ${diagnostics.app.name} ${diagnostics.app.version} (${diagnostics.runtime.platform} ${diagnostics.runtime.architecture})`,
-      `Catalog mods loaded: ${diagnostics.catalog.loadedModCount}; cached: ${diagnostics.catalog.cachedModCount ?? 'unknown'}; offline: ${diagnostics.catalog.offline}`,
-      `Catalog error: ${diagnostics.catalog.lastError || 'none'}`,
+      `VantaMods source: ${diagnostics.library.source}; R2 configured: ${diagnostics.library.r2Configured}`,
       `Installed library entries: ${diagnostics.library.installedModCount}`,
       `Dota path configured: ${diagnostics.game.configured}; exists: ${diagnostics.game.gamePath.exists}`,
       `Migration from legacy profile: ${diagnostics.migration?.migratedStateFrom || 'none'}`,
@@ -178,21 +169,13 @@ async function buildDiagnosticArchiveFiles({ service, app, logger }) {
     'app.log': tailText(diagnostics.recentLogs),
     'userdata-listing.txt': await listFolder(service.rootDir, { maxEntries: 3000 }),
     'downloads-listing.txt': await listFolder(path.join(service.rootDir, 'downloads'), { maxEntries: 1500 }),
-    'library-listing.txt': await listFolder(path.join(service.rootDir, 'database', 'library'), { maxEntries: 1500 }),
+    'library-listing.txt': await listFolder(path.join(service.rootDir, 'VantaMods'), { maxEntries: 1500 }),
     'mod-folder-listing.txt': service.gamePath ? await listFolder(path.join(service.gamePath, `dota_${service.storage.state.settings.langSuffix || 'russian'}`), { maxEntries: 3000 }) : '(Dota path is not configured)\n',
     'dota-pak-listing.txt': service.gamePath ? await listFolder(path.join(service.gamePath, 'dota'), { filter: (entry) => /^pak\d+_/i.test(entry.name) || /^gameinfo(?:_branchspecific)?\.gi$/i.test(entry.name), maxEntries: 500 }) : '(Dota path is not configured)\n',
   };
 
   try {
-    const catalogStat = await fs.stat(service.catalog.cacheFile);
-    if (catalogStat.size <= 20 * 1024 * 1024) files['catalog-cache.json'] = await fs.readFile(service.catalog.cacheFile);
-    else files['catalog-cache-note.txt'] = `Catalog cache was ${catalogStat.size} bytes; omitted because it exceeds the 20 MiB diagnostic archive limit.\n`;
-  } catch (error) {
-    files['catalog-cache-note.txt'] = `Catalog cache could not be included: ${error.code || error.message}\n`;
-  }
-
-  try {
-    const manifestDir = path.join(service.rootDir, 'database', 'manifests');
+    const manifestDir = path.join(service.rootDir, 'VantaMods', 'manifests');
     const entries = (await fs.readdir(manifestDir, { withFileTypes: true })).filter((entry) => entry.isFile() && entry.name.endsWith('.json')).slice(0, 250);
     for (const entry of entries) files[`manifests/${safeEntryName(entry.name)}`] = await fs.readFile(path.join(manifestDir, entry.name));
   } catch (error) {

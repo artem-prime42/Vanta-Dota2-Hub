@@ -1,23 +1,23 @@
 # VANTA Dota2 Hub
 
-VANTA Dota2 Hub is an independent desktop application for discovering, installing, and organizing Dota 2 mods. It combines a community-maintained catalog with a local VPK library, saved mod packs, and Hero Grid management in one interface.
+VANTA Dota2 Hub is an independent desktop application for organizing Dota 2 VPKs, generating local hero cosmetic loadouts from the installed game, saving mod packs, and managing Hero Grids.
 
 > **Unofficial community project.** VANTA is not affiliated with, endorsed by, or supported by Valve or Dota 2. Mods are third-party files. Review their source and compatibility before installing them.
 
 ## Why VANTA exists
 
-Finding a mod is only one part of modding Dota 2. Players also need to understand what a mod changes, install it into the right game folder, keep track of which files they manage, and control the load order when multiple VPKs are installed. VANTA brings these workflows together while keeping the catalog, the game installation, and VANTA's own data separate.
+Players need to understand what a mod changes, install it into the right game folder, keep track of managed files, and control load order. VANTA keeps the game installation and its own data separate and builds cosmetic options directly from the installed game's item schema; it does not fetch an online mod catalog.
 
 VANTA is an independent implementation; it does not run or import the legacy `dota2-mod-manager` application. The catalog is maintained separately from this client. This separation makes the client easier to maintain and lets it display the last successfully cached catalog when the network is unavailable.
 
 ## Features
 
-### Discover and install mods
+### Build local hero cosmetics
 
-- Browse catalog sections for heroes, the game world, interface content, effects, and other mods.
-- Search and filter by category, hero, author, favorites, installation status, and available updates.
-- Open image and video previews, view author information, and mark mods as favorites.
-- Install, update, enable, disable, or uninstall catalog mods. Downloads report progress and can be canceled.
+- Read available hero wearables, default items, inventory-icon paths, and native visual effects from Dota's local `items_game.txt`.
+- Browse hero pages as skin cards. The card list is generated from the installed game at startup and cached; preview art comes from the bundled index of `dota2-media` images.
+- Choose wearables per hero equipment slot and generate a VPK override locally; no mod catalog or skin archive download is used.
+- Applying the generated schema requires the existing local patch-loader flow, which modifies `gameinfo` and `dota.signatures` after confirmation and keeps backups for removal.
 - Detect common Steam libraries automatically or select a Dota 2 game folder manually.
 - Choose the Dota 2 language folder that should receive managed VPK files.
 
@@ -39,7 +39,7 @@ VANTA is an independent implementation; it does not run or import the legacy `do
 
 - English and Russian interface translations, built-in guides, UI scale and game-language settings.
 - Optional Discord Rich Presence and configurable automatic update checks.
-- Cached catalog browsing while offline. Installing or updating a mod still needs network access to that mod's download source.
+- Cached community catalog fetching is disabled. Dota cosmetics are generated from local game files; application updates and explicitly selected special-patch downloads remain separate features.
 
 ## Requirements
 
@@ -47,7 +47,7 @@ VANTA is an independent implementation; it does not run or import the legacy `do
 
 - Windows or Linux. Packaged targets are currently Windows x64 (NSIS installer) and Linux x64 (AppImage). macOS packaging is not configured.
 - A Dota 2 installation is needed for detecting the game, installing mods, and applying Hero Grids. The app can be opened before the game path is configured.
-- Internet access is needed for the latest catalog and mod downloads. Previously cached catalog data remains available offline.
+- Skin previews, application updates, and explicitly installed or updated community patches use network access. Cosmetic metadata and generated VPKs are local.
 
 ### Developing VANTA
 
@@ -100,7 +100,7 @@ GitHub Actions runs the checks and build workflows on pushes to `main` and can a
 
 ## Data sources and storage
 
-- **Mod catalog:** [`dota2-mod-manager-catalog`](https://github.com/artem-prime42/dota2-mod-manager-catalog), fetched from its published `catalog.json`. Catalog metadata and author information are cached locally. Mod archives and previews are hosted at URLs supplied by the catalog; they are not bundled with VANTA.
+- **Hero cosmetics:** generated from `game/dota/pak01_dir.vpk` and its `scripts/items/items_game.txt` entry. The online mod catalog is not requested; preview images are indexed from [`dota2-media/images`](https://github.com/artem-prime42/dota2-media/tree/main/images).
 - **Hero Grid layouts:** bundled JSON files under `src/data/hero-grids/`. The currently included layouts are for patch `7.41f`.
 - **VANTA data:** settings, favorites, library state, saved packs, catalog cache, and downloaded archives are stored in Electron's per-user application data directory, separately from the Dota 2 installation.
 - **Dota 2 files:** managed VPKs and Hero Grid configuration are placed in the selected game/Steam folders. Back up important game files and configurations before making changes.

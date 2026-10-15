@@ -3,29 +3,43 @@ const fsp = require('fs/promises');
 const path = require('path');
 
 class DownloadManager {
-  constructor(rootDir, onProgress = () => {}, legacyRootDirs = [], fetchImpl = globalThis.fetch) { this.rootDir = path.join(rootDir, 'downloads'); this.archiveRoots = [this.rootDir, ...legacyRootDirs.map((directory) => path.join(directory, 'downloads')).filter((directory) => directory !== this.rootDir)]; this.onProgress = onProgress; this.fetchImpl = fetchImpl; this.controllers = new Map(); }
+  constructor(rootDir, onProgress = () => {}, legacyRootDirs = [], fetchImpl = globalThis.fetch) { this.rootDir = path.join(rootDir, 'downloads'); this.archiveRoots = [this.rootDir, ...legacyRootDirs.map((directory) => path.join(directory, 'downloads')).filter((directory) => directory !== this.rootDir)]; this.onProgress = onProgress; this.fetchImpl = fetchImpl; this.controllers = new Map(); this.inFlight = new Map(); }
 
   async download(id, url, { name = id, operation = 'download' } = {}) {
+    const active = this.inFlight.get(id);
+    if (active) {
+      if (active.url === url) return active.promise;
+      await active.promise.catch(() => {});
+      return this.download(id, url, { name, operation });
+    }
+    const promise = this.downloadFile(id, url, { name, operation });
+    this.inFlight.set(id, { url, promise });
+    try { return await promise; }
+    finally { if (this.inFlight.get(id)?.promise === promise) this.inFlight.delete(id); }
+  }
+
+  async downloadFile(id, url, { name = id, operation = 'download' } = {}) {
     if (!url) throw new Error('This mod has no download URL');
     const emit = (event) => this.onProgress({ id, name, operation, ...event });
-    await fsp.mkdir(this.rootDir, { recursive: true });
     const destination = path.join(this.rootDir, `${id}.zip`);
     const sourceFile = `${destination}.url`;
-    if (await this.exists(destination)) {
-      if (!await this.exists(sourceFile) || (await fsp.readFile(sourceFile, 'utf8')) === url) {
-        const stat = await fsp.stat(destination);
-        emit({ loaded: stat.size, total: stat.size, percent: 100, state: 'downloaded', phase: 'Download already cached', fromCache: true });
-        return destination;
-      }
-    }
     const temporary = `${destination}.part`;
     const controller = new AbortController();
     this.controllers.set(id, controller);
     try {
+      await fsp.mkdir(this.rootDir, { recursive: true });
+      if (await this.exists(destination)) {
+        if (!await this.exists(sourceFile) || (await fsp.readFile(sourceFile, 'utf8')) === url) {
+          const stat = await fsp.stat(destination);
+          emit({ loaded: stat.size, total: stat.size, percent: 100, state: 'downloaded', phase: 'Download already cached', fromCache: true });
+          return destination;
+        }
+      }
       let response;
       let lastError;
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         try {
+          if (controller.signal.aborted) throw Object.assign(new Error('Download canceled'), { name: 'AbortError' });
           response = await this.fetchImpl(url, { signal: controller.signal, headers: { 'user-agent': 'VANTA-DOTA2-HUB/0.1', accept: 'application/zip, application/octet-stream, application/vnd.valve.vpk, */*' } });
           if (response.ok) break;
           const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
@@ -65,8 +79,20 @@ class DownloadManager {
 
   cancel(id) { const controller = this.controllers.get(id); if (!controller) return false; controller.abort(); return true; }
 
+  async discardCachedArchive(id, expectedUrl) {
+    const archivePath = path.join(this.rootDir, `${id}.zip`);
+    const sourceFile = `${archivePath}.url`;
+    if (await this.exists(sourceFile)) {
+      const cachedUrl = await fsp.readFile(sourceFile, 'utf8').catch(() => '');
+      if (cachedUrl && cachedUrl !== expectedUrl) return false;
+    }
+    await Promise.all([archivePath, sourceFile].map((file) => fsp.rm(file, { force: true })));
+    return true;
+  }
+
   async clear() {
     for (const controller of this.controllers.values()) controller.abort();
+    await Promise.all([...this.inFlight.values()].map(({ promise }) => promise.catch(() => {})));
     await Promise.all(this.archiveRoots.map(async (archiveRoot) => {
       await fsp.mkdir(archiveRoot, { recursive: true });
       const entries = await fsp.readdir(archiveRoot, { withFileTypes: true });

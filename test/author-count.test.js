@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-test('author and mod cards render counts and bind their catalog IDs', () => {
+test('retired Authors page stays closed and mod cards do not link to author profiles', () => {
   const content = { innerHTML: '', classList: { toggle() {}, add() {}, remove() {} } };
   const document = {
     body: { classList: { toggle() {}, add() {}, remove() {} } },
@@ -59,15 +59,12 @@ test('author and mod cards render counts and bind their catalog IDs', () => {
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../renderer/i18n.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../renderer/app.js'), 'utf8'), context);
-  vm.runInContext(`
-    state.data.settings = { appLanguage: 'ru' };
-    state.data.authors = [{ name: 'Alice', count: 3, avatarUrl: '' }];
-    state.view = 'authors';
-    renderAuthors();
-    window.testCardMarkup = card({ id: 'render-test-mod', name: 'Render Test Mod', author: 'Alice', categoryId: 'other', createdAt: '2026-10-04', downloads: 0 });
-  `, context);
+  const html = fs.readFileSync(require('node:path').join(__dirname, '../renderer/index.html'), 'utf8');
+  vm.runInContext(`window.testCardMarkup = card({ id: 'render-test-mod', name: 'Render Test Mod', author: 'Alice', categoryId: 'other', createdAt: '2026-10-04', downloads: 0 });`, context);
 
-  assert.match(content.innerHTML, /3\s*мод/);
-  assert.doesNotMatch(content.innerHTML, /\{count\}/);
+  assert.doesNotMatch(html, /data-view="authors"/);
+  assert.doesNotMatch(html, /data-view="saved-packs"/);
   assert.match(context.window.testCardMarkup, /data-id="render-test-mod"/);
+  assert.doesNotMatch(context.window.testCardMarkup, /data-card-author/);
+  assert.match(context.window.testCardMarkup, /Alice/);
 });

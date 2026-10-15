@@ -66,6 +66,34 @@ test('Item Effects uses the generic transactional VPK deployment and uninstall p
   assert.equal(storage.state.installedMods[mod.id], undefined);
 });
 
+test('landscape VPK imports into the World library and deploys through the verified VPK path', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-landscape-vpk-'));
+  const gamePath = path.join(root, 'game');
+  const targetRoot = path.join(gamePath, 'dota_russian');
+  await fs.mkdir(targetRoot, { recursive: true });
+  const sourceVpk = path.join(root, 'autumn-landscape.vpk');
+  const writer = new VpkWriter();
+  writer.addFile('maps/landscape/autumn.vmap_c', Buffer.from('verified terrain map payload'));
+  writer.addFile('materials/landscape/autumn_ground.vtex_c', Buffer.from('verified terrain material payload'));
+  writer.write(sourceVpk);
+  const storage = new JsonStorage(root);
+  await storage.init();
+  const manager = new ModManager({ rootDir: root, storage, getGamePath: () => gamePath, getLanguageFolder: () => 'russian', downloads: {}, processRunning: async () => false });
+
+  const imported = await manager.importVpk(sourceVpk, 'Autumn Landscape', { categoryId: 'terrains' });
+  assert.equal(imported.categoryId, 'terrains');
+  assert.equal(imported.enabled, false);
+  const installed = await manager.setEnabled(imported.id, true);
+  const deployedPath = path.join(targetRoot, installed.gameFileName || imported.fileName);
+  const reader = VpkReader.open(deployedPath);
+  try {
+    assert.deepEqual(reader.files().sort(), ['maps/landscape/autumn.vmap_c', 'materials/landscape/autumn_ground.vtex_c']);
+    assert.equal(reader.readFile('maps/landscape/autumn.vmap_c').toString(), 'verified terrain map payload');
+    assert.equal((await reader.verify()).issues.length, 0);
+  } finally { reader.close(); }
+  assert.equal(storage.state.installedMods[imported.id].categoryId, 'terrains');
+});
+
 test('uninstall rejects traversal in persisted game and Library paths without deleting external files', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-uninstall-traversal-'));
   const gamePath = path.join(root, 'game');
@@ -166,6 +194,26 @@ test('library keeps mods from the shared dota folder visible for every language'
   const library = await service.getLibrary();
 
   assert.equal(library.installed.some((mod) => mod.id === 'shared'), true);
+});
+
+test('listMods filters hero records and recognizes installed arrays and objects', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vanta-list-mods-hero-library-'));
+  const service = new AppService({ rootDir: root });
+  await service.storage.init();
+  const { flattenCatalog } = require('../src/core/models');
+  const mods = flattenCatalog({ mods: { modsData: { heroes: [
+    { id: 'anti-mage-weapon', name: 'Anti-Mage Weapon', hero: 'Anti-Mage', slot: 'weapon' },
+    { id: 'earthshaker-totem', name: 'Earthshaker Totem', hero: 'earthshaker', slot: 'totem' },
+  ] } } });
+  service.getAvailableMods = () => mods;
+  service.getLibrary = async () => ({ installed: [{ modId: 'anti-mage-weapon' }] });
+
+  const installedAntiMageMods = await service.listMods({ hero: 'anti_mage', installedOnly: true });
+
+  assert.deepEqual(installedAntiMageMods.mods.map((mod) => mod.id), ['anti-mage-weapon']);
+  service.getLibrary = async () => ({ installed: { 'earthshaker-totem': { id: 'earthshaker-totem' } } });
+  const installedEarthshakerMods = await service.listMods({ hero: 'earthshaker', installedOnly: true });
+  assert.deepEqual(installedEarthshakerMods.mods.map((mod) => mod.id), ['earthshaker-totem']);
 });
 
 test('legacy installed records without targetRoot are excluded from external file detection', async () => {

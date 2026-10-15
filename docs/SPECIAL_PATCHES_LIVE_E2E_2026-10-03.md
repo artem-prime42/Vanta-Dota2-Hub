@@ -44,7 +44,7 @@ All final rollback assertions passed:
 - `game/dota/pak01_dir.vpk` and extracted `items_game.txt` remained byte-identical to baseline.
 - `game/dota/gameinfo_branchspecific.gi` restored to the retained VANTA original backup: 1,653 bytes, SHA-256 `291c2a83f470ee4c5220fdc338204dfdb3077fff4394653dceb59c819976848b`; it no longer contains the Patcher marker.
 - `game/bin/win64/dota.signatures` restored to the retained original backup: 9,166 bytes, SHA-256 `1cbb67972952829e269635785a828211c80e06a9008dc70e238e30ea950bb0ba`; its original `DIGEST:` line was restored and the Patcher hash line is absent.
-- The VANTA-managed `game/DotaModdingCommunityMods/pak01_dir.vpk` was removed.
+- The VANTA-managed legacy `game/DotaModdingCommunityMods/pak01_dir.vpk` was removed.
 - No special-patch records or special-patch manifest remain in VANTA state.
 - VANTA's original backup files remain intact and their hashes match the pre-test backup inventory.
 - Dota was not launched; it was not running at the end.
@@ -53,6 +53,6 @@ External phase snapshots and the machine-readable report are preserved under `/t
 
 ## Difference from h6rd/Patcher and remaining limitation
 
-VANTA reproduces the Tower/Weather item override VPK, `DotaModdingCommunityMods` search path and SHA-1/CRC32 signature-line mechanism. It additionally validates Steam Build ID, base item-data hash, source-definition Git blob hashes, generated VPK integrity, and owns rollback through a journal and verified backups. It does not kill or launch Dota.
+This historical live run used the former `DotaModdingCommunityMods` mount. Current VANTA installs use `VantaMods` and retain SHA-1/CRC32 signature validation, verified backups, and rollback; legacy files are migrated only when their hashes match VANTA's manifest. VANTA does not kill or launch Dota.
 
 Visual in-game behavior was **not verified**. Dota remained closed, as requested. Manual launch and visual confirmation are still required to establish that the Weather and Towers render in-game; no claim of visual functionality or VAC safety is made.

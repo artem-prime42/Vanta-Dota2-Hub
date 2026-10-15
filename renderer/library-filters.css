@@ -1,4 +1,6 @@
 .library-filters { display: flex; gap: 7px; margin-top: 16px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
 .library-filter { flex: 0 0 auto; padding: 8px 13px; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; background: #151515; cursor: pointer; }
 .library-filter:hover, .library-filter.active { color: var(--text); border-color: #888; background: #292929; }
+.library-search { display: flex; align-items: center; gap: 9px; width: min(360px, 100%); margin-top: 14px; padding: 9px 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; background: #121212; }
+.library-search input { width: 100%; min-width: 0; color: var(--text); border: 0; outline: 0; background: transparent; }
 @media (max-width: 780px) { .library-filters { max-width: calc(100vw - 44px); } }

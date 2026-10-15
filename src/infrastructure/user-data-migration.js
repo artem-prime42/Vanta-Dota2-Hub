@@ -3,7 +3,7 @@ const { constants } = require('node:fs');
 const path = require('path');
 
 const LEGACY_APP_DATA_NAMES = ['VANTA', 'VANTA DOTA2 HUB', 'VANTA Dota', 'vanta-dota2-hub', 'vanta-dota'];
-const COPY_DIRECTORIES = ['cache', 'database/library', 'database/saved-packs', 'downloads'];
+const COPY_DIRECTORIES = ['database/library', 'database/saved-packs', 'database/manifests', 'downloads'];
 
 async function readState(filePath) {
   try {

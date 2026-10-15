@@ -5,6 +5,8 @@ const crypto = require('node:crypto');
 const AdmZip = require('adm-zip');
 const { VpkReader, VpkWriter } = require('vpk-tools');
 const { VpkLibrary, isPakFilename, pakFilename, FIRST_PAK_NUMBER } = require('../infrastructure/vpk-library');
+const { resolveVpkDeploymentTarget } = require('../infrastructure/dota-mod-paths');
+const { normalizeModManifest, sha256: hashBuffer, stableImportedId } = require('../core/vanta-mod');
 
 async function hashFile(filePath) {
   const data = await fs.readFile(filePath);
@@ -60,13 +62,14 @@ async function safeRename(source, target) {
 }
 
 class ModManager {
-  constructor({ rootDir, storage, downloads, getGamePath, getLanguageFolder = () => 'dota', onProgress = () => {} }) {
+  constructor({ rootDir, storage, downloads, getGamePath, getLanguageFolder = () => 'dota', onProgress = () => {}, processRunning = async () => false }) {
     this.rootDir = rootDir;
     this.storage = storage;
     this.downloads = downloads;
     this.getGamePath = getGamePath;
     this.getLanguageFolder = getLanguageFolder;
     this.onProgress = onProgress;
+    this.processRunning = processRunning;
     this.library = new VpkLibrary({ rootDir, storage });
     this.fileHashCache = new Map();
   }
@@ -81,6 +84,16 @@ class ModManager {
         delete installedMods[id];
         changed = true;
         continue;
+      }
+      if (record.fileName && !record.contentHash) {
+        const legacyLibraryPath = path.join(this.library.directory, safeVpkLeaf(record.fileName));
+        if (await this.exists(legacyLibraryPath)) {
+          const inspected = await this.inspectVpk(legacyLibraryPath);
+          const migrated = normalizeModManifest({ ...record, contentHash: await hashFile(legacyLibraryPath), files: inspected.files, installState: record.targetRoot ? 'installed' : 'library', source: record.source || 'legacy' });
+          installedMods[id] = migrated;
+          await this.writeManifest(migrated);
+          changed = true;
+        }
       }
       if (record.fileName && isPakFilename(record.fileName)) continue;
       const legacyFile = (record.installedFiles || []).find((file) => /\.vpk(?:\.off|\.moff)?$/i.test(String(file)));
@@ -145,6 +158,7 @@ class ModManager {
       if (!seen.has(recordId)) targetRecords.push(record);
     }
     if (!targetRecords.length) return [];
+    if (targetRecords.some((record) => record.targetRoot || record.enabled !== false)) await this.assertGameClosed();
 
     const renameMoves = [];
     const staleTargetBackups = [];
@@ -274,42 +288,57 @@ class ModManager {
     await this.migrateLegacyRecords();
     this.onProgress({ id: mod.id, name: mod.name, operation: 'mod-install', state: 'processing', phase: 'Preparing download', percent: 0 });
     const archive = await this.downloads.download(mod.id, mod.downloadUrl, { name: mod.name, operation: 'mod-install' });
-    this.onProgress({ id: mod.id, name: mod.name, operation: 'mod-install', state: 'processing', phase: 'Preparing mod files', percent: null });
-    const downloaded = await fs.readFile(archive);
+    return this.installFromPackage(mod, archive, { source: 'r2', sourcePackage: { url: mod.downloadUrl || null, version: mod.version || null } });
+  }
+
+  async installFromPackage(mod, packagePath, { source = 'import', sourcePackage = null, deploy = true } = {}) {
+    await this.library.init();
+    await this.migrateLegacyRecords();
+    if (!mod || typeof mod !== 'object') throw new Error('A valid mod record is required.');
+    if (deploy) await this.assertGameClosed();
+    const operation = source === 'import' ? 'mod-import' : source === 'library-reinstall' ? 'library-reinstall' : 'mod-install';
+    this.onProgress({ id: mod.id || 'import', name: mod.name || mod.displayName || path.basename(packagePath), operation, state: 'processing', phase: 'Preparing mod files', percent: null });
+    const downloaded = await fs.readFile(packagePath);
     const directVpk = downloaded.length >= 4 && downloaded.readUInt32LE(0) === 0x55aa1234;
     let vpkData = downloaded;
+    let archiveEntryName = path.basename(packagePath);
     if (!directVpk) {
       let zip;
-      try { zip = new AdmZip(downloaded); } catch (error) { throw new Error(`Downloaded mod is not a valid ZIP or VPK: ${error.message}`); }
+      try { zip = new AdmZip(downloaded); } catch (error) { throw new Error(`Package is not a valid ZIP or VPK: ${error.message}`); }
       const vpkEntry = zip.getEntries().find((entry) => !entry.isDirectory && entry.entryName.toLowerCase().endsWith('.vpk'));
-      if (!vpkEntry) throw new Error('Download archive contained no VPK file');
+      if (!vpkEntry) throw new Error('Package archive contained no VPK file');
+      archiveEntryName = path.basename(vpkEntry.entryName);
       vpkData = vpkEntry.getData();
     }
-    const previous = this.storage.state.installedMods[mod.id];
+    const packageHash = hashBuffer(vpkData);
+    const id = mod.id ? safeModRecordId(mod.id) : stableImportedId(packageHash);
+    const previous = this.storage.state.installedMods[id];
+    const existingDuplicate = Object.values(this.storage.state.installedMods || {}).find((record) => record?.contentHash === packageHash);
+    if (!deploy && existingDuplicate) return existingDuplicate;
     const previousInstalledMods = JSON.parse(JSON.stringify(this.storage.state.installedMods || {}));
-    const recordId = safeModRecordId(mod.id);
+    const recordId = safeModRecordId(id);
     const reservation = await this.reserveFileName(previous?.fileName || null);
-    const temporary = `${reservation.path}.part`;
-    const backup = `${reservation.path}.backup`;
-    const previousManifestPath = path.join(this.rootDir, 'database', 'manifests', `${recordId}.json`);
+    const temporary = path.join(this.library.stagingDirectory, `.${recordId}.${crypto.randomUUID()}.part`);
+    const backup = path.join(this.library.backupsDirectory, `.${recordId}.${crypto.randomUUID()}.backup`);
+    const previousManifestPath = path.join(this.library.manifestsDirectory, `${recordId}.json`);
     const previousManifest = await this.readOptionalFile(previousManifestPath);
     let deployment = null;
     try {
-      this.onProgress({ id: mod.id, name: mod.name, operation: 'mod-install', state: 'processing', phase: 'Installing into Dota 2', percent: null });
+      this.onProgress({ id, name: mod.name || mod.displayName || id, operation, state: 'processing', phase: 'Validating VPK', percent: null });
       await fs.writeFile(temporary, vpkData);
-      await this.validateVpk(temporary);
+      const inspected = await this.inspectVpk(temporary);
       if (await this.exists(reservation.path)) await fs.rename(reservation.path, backup);
       await fs.rename(temporary, reservation.path);
-      const record = this.createModRecord(mod, previous, reservation.fileName);
-      record.contentHash = await hashFile(reservation.path);
-      deployment = await this.deploy(record, { retainBackup: true });
-      record.targetRoot = deployment.targetRoot;
-      record.gameFileName = record.gameFileName || path.basename(deployment.targetPath).replace(/\.vanta-disabled$/i, '');
+      const record = this.createModRecord({ ...mod, id }, previous, reservation.fileName, { source, sourcePackage, packageHash, inspected, archiveEntryName });
+      if (deploy) deployment = await this.deploy(record, { retainBackup: true, expectedExistingHash: previous?.contentHash || null });
+      record.targetRoot = deployment?.targetRoot || previous?.targetRoot || null;
+      record.gameFileName = deployment ? record.gameFileName || path.basename(deployment.targetPath).replace(/\.vanta-disabled$/i, '') : previous?.gameFileName || null;
+      record.installState = deployment ? 'installed' : 'library';
       await this.writeManifest(record);
-      await this.storage.patch({ installedMods: { ...this.storage.state.installedMods, [mod.id]: record } });
-      await deployment.commit();
+      await this.storage.patch({ installedMods: { ...this.storage.state.installedMods, [id]: record } });
+      await deployment?.commit();
       await fs.rm(backup, { force: true }).catch(() => {});
-      this.onProgress({ id: mod.id, name: mod.name, operation: 'mod-install', state: 'completed', phase: 'Installed', percent: 100 });
+      this.onProgress({ id, name: record.name, operation, state: 'completed', phase: deployment ? 'Installed' : 'Imported to VantaMods', percent: 100 });
       return record;
     } catch (error) {
       try { await deployment?.rollback(); } catch (rollbackError) { throw new Error(`VPK update failed and game-file rollback needs attention: ${rollbackError.message}. Original error: ${error.message}`); }
@@ -320,43 +349,31 @@ class ModManager {
       else await fs.rm(previousManifestPath, { force: true });
       this.storage.state.installedMods = previousInstalledMods;
       await this.storage.save();
-      this.onProgress({ id: mod.id, name: mod.name, operation: 'mod-install', state: 'failed', phase: 'Installation failed', error: error.message });
+      this.onProgress({ id, name: mod.name || mod.displayName || id, operation, state: 'failed', phase: 'Installation failed', error: error.message });
       throw error;
     }
     finally { await reservation.release(); }
   }
 
-  createModRecord(mod, previous, fileName) {
+  async importVpk(filePath, displayName = path.basename(filePath, path.extname(filePath)), metadata = {}) {
+    return this.installFromPackage({ ...metadata, id: metadata.id, name: String(displayName || '').trim() || 'Imported VPK', type: 'mod', source: 'import', version: metadata.version || 'imported', enabled: false }, filePath, { source: 'import', sourcePackage: { fileName: path.basename(filePath), importedAt: new Date().toISOString() }, deploy: false });
+  }
+
+  createModRecord(mod, previous, fileName, { source = 'legacy', sourcePackage = null, packageHash = null, inspected = null, archiveEntryName = null } = {}) {
     const languageFolder = this.getLanguageFolder() || 'dota';
-    return { ...previous, id: mod.id, modId: mod.id, type: 'mod', displayName: mod.name, name: mod.name, fileName, author: mod.author, categoryId: mod.categoryId, hero: mod.hero, heroLabel: mod.heroLabel, slot: mod.slot, previewUrl: mod.previewUrl, languageFolder, version: mod.version, installedAt: previous?.installedAt || new Date().toISOString(), installedFiles: [fileName], enabled: previous?.enabled !== false, priority: previous?.priority || this.getPriorityValue({ fileName }) };
+    return normalizeModManifest({ ...previous, id: mod.id, modId: mod.id, type: mod.type || 'mod', modType: mod.modType || (mod.type === 'pack' ? 'pack' : 'local_vpk'), displayName: mod.name || mod.displayName || mod.id, name: mod.name || mod.displayName || mod.id, description: mod.description || '', fileName, author: mod.author || null, categoryId: mod.categoryId || 'other', hero: mod.hero || null, heroLabel: mod.heroLabel || null, slot: mod.slot || null, previewUrl: mod.previewUrl || mod.image || null, languageFolder, version: mod.version || 'unknown', installedAt: previous?.installedAt || new Date().toISOString(), updatedAt: new Date().toISOString(), installedFiles: [fileName], enabled: mod.enabled ?? previous?.enabled ?? source !== 'import', priority: previous?.priority || this.getPriorityValue({ fileName }), source, sourcePackage: { ...(sourcePackage || {}), archiveEntryName }, contentHash: packageHash, files: inspected?.files || [], installState: 'library', compatibility: { state: 'unknown', gameBuildId: null, note: 'Compatibility with the current Dota 2 build has not been confirmed.' }, actions: ['install', 'enable', 'disable', 'update', 'repair', 'uninstall'] });
   }
 
   async update(mod) { return this.install(mod); }
 
-  async importVpk(filePath, displayName = path.basename(filePath, path.extname(filePath))) {
-    const reservation = await this.reserveFileName();
-    const temporary = `${reservation.path}.part`;
-    try {
-      await fs.copyFile(filePath, temporary);
-      await this.validateVpk(temporary);
-      await fs.rename(temporary, reservation.path);
-      const id = `import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const name = String(displayName).trim() || 'Imported VPK';
-      const record = { id, modId: id, type: 'mod', displayName: name, name, fileName: reservation.fileName, installedFiles: [reservation.fileName], categoryId: 'other', languageFolder: this.getLanguageFolder() || 'dota', version: 'imported', installedAt: new Date().toISOString(), enabled: false, priority: this.getPriorityValue({ fileName: reservation.fileName }) };
-      await this.writeManifest(record);
-      await this.storage.patch({ installedMods: { ...this.storage.state.installedMods, [id]: record } });
-      return record;
-    } catch (error) { await fs.rm(temporary, { force: true }); throw error; }
-    finally { await reservation.release(); }
-  }
-
-  async deploy(record, { retainBackup = false } = {}) {
+  async deploy(record, { retainBackup = false, expectedExistingHash = null } = {}) {
     const gamePath = this.getGamePath();
     if (!gamePath) throw new Error('Dota 2 installation is not configured');
-    const targetRoot = this.getLanguageRoot(record.languageFolder);
+    const target = resolveVpkDeploymentTarget(gamePath, record.languageFolder, record.gameFileName || record.fileName);
+    const targetRoot = target.root;
     await fs.mkdir(targetRoot, { recursive: true });
     const fileName = safeVpkLeaf(record.gameFileName || record.fileName);
-    const activeTarget = path.join(targetRoot, fileName);
+    const activeTarget = target.path;
     const targetPath = record.enabled === false ? `${activeTarget}.vanta-disabled` : activeTarget;
     if (!isInside(targetRoot, targetPath)) throw new Error('Refusing to deploy a VPK outside the selected Dota language folder');
     const temporary = path.join(targetRoot, `.${path.basename(targetPath)}.${process.pid}.${crypto.randomUUID()}.tmp`);
@@ -366,6 +383,7 @@ class ModManager {
       await fs.copyFile(path.join(this.library.directory, safeVpkLeaf(record.fileName)), temporary);
       if (record.contentHash && await hashFile(temporary) !== record.contentHash) throw new Error('Staged game VPK failed its content hash check');
       if (await this.exists(targetPath)) {
+        if (!expectedExistingHash || await hashFile(targetPath) !== expectedExistingHash) throw new Error(`Refusing to overwrite an unowned or modified Dota file: ${path.basename(targetPath)}`);
         await fs.rename(targetPath, backup);
         hadTarget = true;
       }
@@ -394,14 +412,34 @@ class ModManager {
   getLanguageRoot(languageFolder = this.getLanguageFolder()) {
     const gamePath = this.getGamePath();
     if (!gamePath) return null;
-    const folder = String(languageFolder || 'dota');
-    return path.join(gamePath, /^dota_/i.test(folder) || folder.toLowerCase() === 'dota' ? folder : `dota_${folder}`);
+    return resolveVpkDeploymentTarget(gamePath, languageFolder, 'pak02_dir.vpk').root;
+  }
+
+  async assertGameClosed() {
+    if (await this.processRunning()) throw new Error('Close Dota 2 before changing deployed mod files. VANTA will not terminate the game automatically.');
+  }
+
+  async inspectVpk(file) {
+    const reader = VpkReader.open(file);
+    try {
+      const entries = reader.files();
+      if (!entries.length) throw new Error('VPK contains no files');
+      if (entries.some((entry) => !isSafeVpkEntry(entry))) throw new Error('VPK contains an unsafe internal path');
+      const verification = await reader.verify();
+      if (verification.issues?.length || !verification.checkedFiles) throw new Error('VPK payload verification failed');
+      const files = entries.map((entry) => {
+        const data = reader.readFile(entry);
+        return { path: entry, size: data.length, sha256: hashBuffer(data) };
+      });
+      return { files };
+    } finally { reader.close(); }
   }
 
   async moveInstalledMods(languageFolder) {
     const gamePath = this.getGamePath();
     const installedMods = this.storage.state.installedMods || {};
     if (!gamePath) return installedMods;
+    if (Object.values(installedMods).some((record) => record?.fileName && (record.targetRoot || record.enabled !== false))) await this.assertGameClosed();
     const targetRoot = this.getLanguageRoot(languageFolder);
     const moves = [];
     const copies = [];
@@ -464,7 +502,6 @@ class ModManager {
 
   async syncInstalled() {
     await this.library.init();
-    await this.migrateLegacyRecords();
     await this.reconcileGameFilenames();
     return this.storage.state.installedMods;
   }
@@ -545,7 +582,8 @@ class ModManager {
     const libraryFileName = safeVpkLeaf(record.fileName);
     safeModRecordId(id);
     const gamePath = this.getGamePath();
-    const previousManifestPath = path.join(this.rootDir, 'database', 'manifests', `${id}.json`);
+    if (targetRoot) await this.assertGameClosed();
+    const previousManifestPath = path.join(this.library.manifestsDirectory, `${safeModRecordId(id)}.json`);
     if (targetRoot) {
       if (!gamePath || !isInside(gamePath, targetRoot)) throw new Error('Library record points outside the configured Dota folder; refusing to uninstall it. Re-select the correct Dota path first.');
       const rootReal = await fs.realpath(gamePath);
@@ -596,6 +634,7 @@ class ModManager {
   async setEnabled(id, enabled) {
     const record = this.storage.state.installedMods[id];
     if (!record || !record.fileName) throw new Error('Library item not found');
+    await this.assertGameClosed();
     const gamePath = this.getGamePath();
     if (!gamePath) throw new Error('Dota 2 installation is not configured');
     const targetRoot = this.getLanguageRoot(record.languageFolder);
@@ -603,9 +642,53 @@ class ModManager {
     const gameFileName = record.gameFileName || record.fileName;
     const active = path.join(targetRoot, gameFileName); const disabled = `${active}.vanta-disabled`;
     const legacyDisabled = [`${active}.off`, `${active}.moff`];
-    if (enabled) { let legacy = ''; for (const file of legacyDisabled) if (await this.exists(file)) { legacy = file; break; } if (await this.exists(disabled)) await safeRename(disabled, active); else if (legacy) await safeRename(legacy, active); else if (!await this.exists(active)) await this.deploy(record); }
-    else if (await this.exists(active)) await safeRename(active, disabled);
-    const next = { ...record, enabled }; await this.writeManifest(next);
+    const expectedHash = record.contentHash || null;
+    if (enabled) {
+      let legacy = '';
+      for (const file of legacyDisabled) if (await this.exists(file)) { legacy = file; break; }
+      const disabledSource = await this.exists(disabled) ? disabled : legacy;
+      if (disabledSource) {
+        if (!expectedHash || await hashFile(disabledSource) !== expectedHash) throw new Error('Disabled game VPK differs from its VANTA package; it was left untouched.');
+        if (await this.exists(active)) throw new Error(`Cannot enable mod because the target already exists: ${path.basename(active)}`);
+        await safeRename(disabledSource, active);
+      } else if (!await this.exists(active)) await this.deploy({ ...record, enabled });
+      else if (!expectedHash || await hashFile(active) !== expectedHash) throw new Error('Existing game VPK differs from its VANTA package; it was left untouched.');
+    } else if (await this.exists(active)) {
+      if (!expectedHash || await hashFile(active) !== expectedHash) throw new Error('Game VPK differs from its VANTA package; it was left untouched.');
+      if (await this.exists(disabled)) throw new Error(`Cannot disable mod because the disabled target already exists: ${path.basename(disabled)}`);
+      await safeRename(active, disabled);
+    }
+    const next = { ...record, gameFileName, deployedFileName: gameFileName, targetRoot, enabled, installState: 'installed' }; await this.writeManifest(next);
+    await this.storage.patch({ installedMods: { ...this.storage.state.installedMods, [id]: next } });
+    return next;
+  }
+
+  async updateFromLibrary(id) {
+    const record = this.storage.state.installedMods?.[id];
+    if (!record) throw new Error('Library item not found.');
+    if (record.sourcePackage?.url || record.sourcePackage?.releaseUrl) throw new Error('A trusted update provider must fetch and verify the selected release before updating this mod.');
+    throw new Error('No newer package is configured for this local mod. Use Repair to restore its verified installed copy.');
+  }
+
+  async repair(id) {
+    const record = this.storage.state.installedMods?.[id];
+    if (!record?.fileName) throw new Error('Library package not found.');
+    await this.assertGameClosed();
+    const packagePath = path.join(this.library.directory, safeVpkLeaf(record.fileName));
+    if (!await this.exists(packagePath)) throw new Error('The local VantaMods package is missing; repair cannot proceed.');
+    const inspected = await this.inspectVpk(packagePath);
+    const packageHash = await hashFile(packagePath);
+    if (record.contentHash && packageHash !== record.contentHash) throw new Error('Local package bytes differ from the manifest; the package is quarantined from repair.');
+    const root = record.targetRoot || this.getLanguageRoot(record.languageFolder);
+    const name = safeVpkLeaf(record.gameFileName || record.deployedFileName || record.fileName);
+    const target = path.join(root, record.enabled === false ? `${name}.vanta-disabled` : name);
+    if (await this.exists(target)) {
+      if (await hashFile(target) !== packageHash) throw new Error('Deployed VPK was changed outside VANTA; it was left untouched. Remove or back it up manually before repair.');
+      return { ...record, files: inspected.files, installState: 'installed', repair: 'already_verified' };
+    }
+    const deployed = await this.deploy({ ...record, contentHash: packageHash }, { expectedExistingHash: null });
+    const next = normalizeModManifest({ ...record, targetRoot: deployed.targetRoot, gameFileName: name, contentHash: packageHash, files: inspected.files, installState: 'installed', lastOperationError: null });
+    await this.writeManifest(next);
     await this.storage.patch({ installedMods: { ...this.storage.state.installedMods, [id]: next } });
     return next;
   }
@@ -627,6 +710,7 @@ class ModManager {
   }
 
   async buildPack(ids, name, previousPack = null) {
+    await this.assertGameClosed();
     const records = ids.map((id) => this.storage.state.installedMods[id]).filter(Boolean);
     if (records.length !== ids.length || records.length < 2) throw new Error('Selected Library mods were not found');
     const displayName = String(name || '').trim(); if (!displayName) throw new Error('Pack name is required');
@@ -650,7 +734,8 @@ class ModManager {
       const packId = previousPack?.id || `pack-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const sourceMods = records.flatMap((record) => record.type === 'pack' ? (record.sourceMods || record.packMods || []) : [{ id: this.recordId(record), name: record.displayName || record.name, displayName: record.displayName || record.name, fileName: record.fileName, author: record.author, previewUrl: record.previewUrl, hero: record.hero, heroLabel: record.heroLabel, slot: record.slot }]);
       const sourceModIds = sourceMods.map((source) => source.id || source.modId).filter(Boolean);
-      const pack = { ...previousPack, id: packId, modId: packId, type: 'pack', category: 'Pack', displayName, name: displayName, fileName: reservation.fileName, categoryId: 'packs', languageFolder: records[0].languageFolder || this.getLanguageFolder() || 'dota', version: 'merged', updatedAt: new Date().toISOString(), installedFiles: [reservation.fileName], enabled: previousPack ? previousPack.enabled !== false : true, sourceModIds, sourceMods, modIds: sourceModIds, packMods: sourceMods };
+      const packHash = await hashFile(reservation.path);
+      const pack = normalizeModManifest({ ...previousPack, id: packId, modId: packId, type: 'pack', category: 'Pack', displayName, name: displayName, fileName: reservation.fileName, categoryId: 'packs', languageFolder: records[0].languageFolder || this.getLanguageFolder() || 'dota', version: 'merged', updatedAt: new Date().toISOString(), installedFiles: [reservation.fileName], enabled: previousPack ? previousPack.enabled !== false : true, source: 'generated', sourcePackage: { kind: 'merged-vpk', sourceModIds }, contentHash: packHash, files: (await this.inspectVpk(reservation.path)).files, sourceModIds, sourceMods, modIds: sourceModIds, packMods: sourceMods, installState: 'library', compatibility: { state: 'unknown', gameBuildId: null } });
       await this.writeManifest(pack);
       if (pack.enabled) await this.deploy(pack);
       const installedMods = { ...this.storage.state.installedMods, [packId]: pack };
@@ -661,7 +746,7 @@ class ModManager {
           await fs.rm(path.join(targetRoot, `${record.fileName}.vanta-disabled`), { force: true });
         }
         await fs.rm(path.join(this.library.directory, record.fileName), { force: true });
-        await fs.rm(path.join(this.rootDir, 'database', 'manifests', `${this.recordId(record)}.json`), { force: true });
+        await fs.rm(path.join(this.library.manifestsDirectory, `${safeModRecordId(this.recordId(record))}.json`), { force: true });
         delete installedMods[this.recordId(record)];
       }
       await this.storage.patch({ installedMods });
@@ -685,18 +770,9 @@ class ModManager {
 
   async renamePack(id, name) { return this.rename(id, name); }
 
-  async writeManifest(record) { const manifests = path.join(this.rootDir, 'database', 'manifests'); await fs.mkdir(manifests, { recursive: true }); await this.atomicWrite(path.join(manifests, `${safeModRecordId(this.recordId(record))}.json`), `${JSON.stringify(record, null, 2)}\n`); }
+  async writeManifest(record) { const manifests = this.library.manifestsDirectory; await fs.mkdir(manifests, { recursive: true }); await this.atomicWrite(path.join(manifests, `${safeModRecordId(this.recordId(record))}.json`), `${JSON.stringify(normalizeModManifest(record), null, 2)}\n`); }
 
-  async validateVpk(file) {
-    const reader = VpkReader.open(file);
-    try {
-      const files = reader.files();
-      if (!files.length) throw new Error('VPK contains no files');
-      if (files.some((entry) => !isSafeVpkEntry(entry))) throw new Error('VPK contains an unsafe internal path');
-      const result = await reader.verify();
-      if (result.issues?.length || !result.checkedFiles) throw new Error('VPK payload verification failed');
-    } finally { reader.close(); }
-  }
+  async validateVpk(file) { return this.inspectVpk(file); }
 
   async atomicWrite(filePath, data) {
     await fs.mkdir(path.dirname(filePath), { recursive: true });

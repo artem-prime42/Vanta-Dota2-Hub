@@ -325,25 +325,12 @@ function showThemeDetails(theme) {
   const sourceLabel = theme.source === 'builtin' ? settingsCopy('Встроенная тема', 'Built-in theme') : theme.source === 'catalog' ? settingsCopy('Тема каталога', 'Catalog theme') : settingsCopy('Пользовательская тема', 'User theme');
   const sourceShortLabel = theme.source === 'builtin' ? settingsCopy('Встроенная', 'Built-in') : theme.source === 'catalog' ? settingsCopy('Каталог', 'Catalog') : settingsCopy('Моя тема', 'My theme');
   const authorName = String(theme.author || 'VANTA');
-  const author = typeof getAuthorCardProfile === 'function' ? getAuthorCardProfile(authorName) : null;
-  const authorMarkup = author ? `<button type="button" class="author-link theme-details-author" data-theme-author="${escapeHtml(authorName)}" aria-label="${escapeHtml(settingsCopy('Открыть профиль автора', 'Open author profile'))}">${author.avatarUrl ? `<img src="${escapeHtml(author.avatarUrl)}" alt="">` : `<span class="author-fallback">${escapeHtml(authorName.slice(0, 1).toUpperCase())}</span>`}<span>${escapeHtml(authorName)}</span></button>` : `<span class="theme-details-author-name">${escapeHtml(authorName)}</span>`;
+  const authorMarkup = `<span class="theme-details-author-name">${escapeHtml(authorName)}</span>`;
   dialog.innerHTML = `<button class="theme-details-close" aria-label="${settingsCopy('Закрыть', 'Close')}">×</button><img class="theme-details-preview" src="${escapeHtml(theme.preview || '')}" alt="${escapeHtml(display.name)}"><div class="theme-details-copy"><p class="theme-store-kicker">${escapeHtml(sourceLabel)}</p><h2>${escapeHtml(display.name)}</h2><div class="theme-details-author-row">${authorMarkup}<span>v${escapeHtml(theme.version || '1.0.0')}</span></div><p class="theme-details-description">${escapeHtml(display.description || settingsCopy('Пользовательская тема интерфейса.', 'Custom interface theme.'))}</p><div class="theme-details-meta"><span>${settingsCopy('Источник', 'Source')}</span><strong>${escapeHtml(sourceShortLabel)}</strong><span>${settingsCopy('Статус', 'Status')}</span><strong>${active ? settingsCopy('Активна', 'Active') : settingsCopy('Не активна', 'Inactive')}</strong></div><div class="theme-details-actions"><button class="action ${active ? 'secondary' : ''}" data-detail-apply>${active ? settingsCopy('Тема применена', 'Theme applied') : settingsCopy('Применить тему', 'Apply theme')}</button>${canRemove ? `<button class="action secondary" data-detail-remove>${settingsCopy('Удалить тему', 'Remove theme')}</button>` : ''}</div></div>`;
   const close = () => closeThemeDialog(dialog);
   dialog.querySelector('.theme-details-close').onclick = close;
   dialog.addEventListener('click', (event) => { if (event.target === dialog) close(); });
   dialog.addEventListener('cancel', (event) => { event.preventDefault(); close(); });
-  dialog.querySelector('[data-theme-author]')?.addEventListener('click', async (event) => {
-    state.author = event.currentTarget.dataset.themeAuthor;
-    state.authorQuery = '';
-    state.authorSort = 'default';
-    state.view = 'authors';
-    state.category = 'all';
-    state.hero = '';
-    document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === 'authors'));
-    window.scrollTo(0, 0);
-    await close();
-    loadCatalog();
-  });
   dialog.querySelector('[data-detail-apply]').onclick = async () => {
     try {
       const response = await call('themes:apply', { themeId: theme.id });
@@ -385,7 +372,6 @@ function renderSettings() {
       </section>
       <section class="settings-category settings-category-dota"><h3>${settingsCopy('Dota 2 и моды', 'Dota 2 and mods')}</h3><p class="settings-category-description">${settingsCopy('Путь к игре и папка, в которую устанавливаются моды.', 'Game path and the folder used for installed mods.')}</p>
         <div class="setting-row"><div><strong>${settingsCopy('Путь к Dota 2', 'Dota 2 installation')}</strong><div class="setting-value setting-path" title="${gamePath}">${gamePath}</div></div><div class="setting-actions"><button id="detect-game" class="action secondary">${settingsCopy('Определить автоматически', 'Auto detect')}</button><button id="browse-game" class="action">${settingsCopy('Выбрать папку', 'Browse')}</button></div></div>
-        <div class="setting-row"><div><strong>${settingsCopy('Папка языка', 'Language folder')}</strong><div class="setting-value">${settingsCopy('Папка файлов модов', 'Mod files language folder')}</div></div><select id="language-folder"><option value="russian">${settingsCopy('Русский', 'Russian')}</option><option value="english">${settingsCopy('Английский', 'English')}</option><option value="schinese">${settingsCopy('Китайский (упрощённый)', 'Simplified Chinese')}</option></select></div>
       </section>
       <section class="settings-category settings-category-activity"><h3>${settingsCopy('Обновления и активность', 'Updates and activity')}</h3><p class="settings-category-description">${settingsCopy('Фоновая проверка обновлений и статус VANTA в Discord.', 'Update checks and VANTA activity in Discord.')}</p>
         <div class="setting-row"><div><strong>${settingsCopy('Автообновление', 'Auto update')}</strong><div class="setting-value">${settingsCopy('Проверять обновления VANTA', 'Check for VANTA updates')}</div></div><button id="auto-update" class="toggle-button ${settings.autoUpdateEnabled !== false ? 'on' : ''}">${enabled(settings.autoUpdateEnabled !== false)}</button></div>
@@ -396,12 +382,9 @@ function renderSettings() {
           <span class="app-version-badge">${settingsCopy('Версия', 'Version')} · ${state.data.appVersion || '—'}</span>
           <h3>${settingsCopy('О программе', 'About')}</h3>
         </div>
-        <p class="settings-category-description">${settingsCopy('Источник каталога, обновление данных и связь с сообществом.', 'Catalog source, data refresh, and community links.')}</p>
-        <div class="setting-row"><div><strong>${settingsCopy('Источник каталога', 'Catalog source')}</strong><div class="setting-value">GitHub · artem-prime42/dota2-mod-manager-catalog</div></div><span class="badge">External</span></div>
-        <div class="setting-row"><div><strong>${settingsCopy('Обновление каталога', 'Catalog update')}</strong><div class="setting-value">${settingsCopy('Получить последнюю версию каталога', 'Get the latest catalog version')}</div></div><button id="settings-refresh-catalog" class="action">${settingsCopy('Обновить каталог', 'Refresh catalog')}</button></div>
+        <p class="settings-category-description">${settingsCopy('Настройки приложения и системная диагностика.', 'Application settings and system diagnostics.')}</p>
         <div class="setting-row"><div><strong>${settingsCopy('Обновление VANTA', 'VANTA update')}</strong><div class="setting-value">${settingsCopy('Проверить новую версию приложения', 'Check for a new application version')}</div></div><button id="settings-check-updates" class="action">${settingsCopy('Проверить обновления', 'Check for updates')}</button></div>
-        <div class="setting-row"><div><strong>${settingsCopy('Архивы модов', 'Mod archives')}</strong><div class="setting-value">${settingsCopy('Сохраняются для быстрой переустановки без повторной загрузки.', 'Kept for quick reinstalls without downloading again.')}</div><div id="settings-archive-size" class="setting-value">${settingsCopy('Подсчёт размера...', 'Calculating size...')}</div><div id="settings-archive-path" class="setting-value">${settingsCopy('Определение папки...', 'Locating archive folder...')}</div></div><div class="setting-actions"><button id="settings-browse-archives" class="action">${settingsCopy('Обзор', 'Browse')}</button><button id="settings-clear-archives" class="action secondary">${settingsCopy('Удалить все архивы', 'Delete all archives')}</button></div></div>
-        <div class="settings-diagnostics"><div><strong>${settingsCopy('Диагностика и логи', 'Diagnostics and logs')}</strong><p>${settingsCopy('Сохранить диагностику, логи и списки файлов в ZIP-архив. Перед отправкой проверьте его: внутри могут быть пути к игре и имена модов.', 'Save diagnostics, logs, and file listings in a ZIP archive. Review it before sharing: it may contain game paths and mod names.')}</p></div><div class="setting-actions"><button id="settings-export-linux-diagnostic" class="action secondary">${settingsCopy('Linux отчёт JSON', 'Linux JSON report')}</button><button id="settings-export-diagnostics" class="action secondary">${settingsCopy('Экспортировать отчёт', 'Export report')}</button></div></div>
+        <div class="settings-diagnostics"><div><strong>${settingsCopy('Диагностика и логи', 'Diagnostics and logs')}</strong><p>${settingsCopy('Сохранить диагностику, логи и списки файлов в ZIP-архив. Перед отправкой проверьте его: внутри могут быть пути к игре и имена модов.', 'Save diagnostics, logs, and file listings in a ZIP archive. Review it before sharing: it may contain game paths and mod names.')}</p></div><div class="setting-actions"><button id="settings-export-diagnostics" class="action secondary">${settingsCopy('Экспортировать отчёт', 'Export report')}</button></div></div>
         <div class="setting-row requested-socials"><div><strong>${settingsCopy('Социальные сети', 'Social networks')}</strong><div class="setting-value">${settingsCopy('Новости и поддержка проекта', 'Project news and support')}</div></div><div class="social-actions">${SETTINGS_SOCIALS.map(([name, url, tone]) => `<a class="social-button ${tone}" href="${url}" target="_blank" rel="noreferrer">${name}</a>`).join('')}</div></div>
       </section>
     </div>
@@ -411,25 +394,15 @@ function renderSettings() {
   const set = async (key, value) => { state.data = await call('settings:set', { key, value }); renderSettings(); };
   $('#detect-game').onclick = async () => { try { state.data = await call('game:detect'); updateGameStatus(state.data.gamePath); renderSettings(); toast(state.data.gamePath ? settingsCopy('Dota 2 найдена.', 'Dota 2 installation detected.') : settingsCopy('Dota 2 не найдена.', 'Dota 2 was not found.')); } catch (error) { toast(error.message); } };
   $('#browse-game').onclick = async () => { try { state.data = await call('game:set-path'); updateGameStatus(state.data.gamePath); renderSettings(); } catch (error) { toast(error.message); } };
-  $('#language-folder').value = settings.langSuffix || 'russian';
   $('#app-language').value = settings.appLanguage || 'en';
-  $('#language-folder').onchange = (event) => set('langSuffix', event.target.value);
   $('#app-language').onchange = (event) => set('appLanguage', event.target.value);
   $('#auto-update').onclick = () => set('autoUpdateEnabled', settings.autoUpdateEnabled === false);
   $('#discord-activity').onclick = () => set('discordActivityEnabled', !settings.discordActivityEnabled);
   $('#interface-scale').oninput = (event) => { document.documentElement.style.setProperty('--app-ui-scale', event.target.value); $('#interface-scale-value').value = `${Number(event.target.value).toFixed(2)}×`; };
   $('#interface-scale').onchange = (event) => set('interfaceScale', Number(event.target.value));
   $('#reset-interface-scale').onclick = () => { applyInterfaceScale(1); set('interfaceScale', 1); };
-  $('#settings-refresh-catalog').onclick = async (event) => { const button = event.currentTarget; button.disabled = true; try { state.data = await call('catalog:refresh'); toast(settingsCopy('Каталог обновлён.', 'Catalog updated.')); } catch (error) { toast(error.message); } finally { button.disabled = false; } };
   $('#settings-check-updates').onclick = async (event) => { const button = event.currentTarget; button.disabled = true; try { const result = await call('update:check', { manual: true }); if (result.status === 'not-available') toast(settingsCopy('Новых обновлений нет.', 'No updates are available.')); } catch (error) { toast(error.message); } finally { button.disabled = false; } };
   $('#settings-export-diagnostics').onclick = async (event) => { const button = event.currentTarget; button.disabled = true; try { const result = await call('diagnostics:export'); if (!result.canceled) toast(settingsCopy('ZIP-архив диагностики сохранён.', 'Diagnostic ZIP archive saved.')); } catch (error) { toast(error.message); } finally { button.disabled = false; } };
-  $('#settings-export-linux-diagnostic').onclick = async (event) => { const button = event.currentTarget; button.disabled = true; try { const result = await call('diagnostics:linux-export'); if (!result.canceled) toast(settingsCopy('Linux-отчёт сохранён.', 'Linux diagnostic report saved.')); } catch (error) { toast(error.message); } finally { button.disabled = false; } };
-  if (!navigator.userAgent.includes('Linux')) $('#settings-export-linux-diagnostic').hidden = true;
-  const formatArchiveSize = (bytes) => { const value = Number(bytes || 0); if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`; if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`; return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`; };
-  const updateArchiveStats = async () => { try { const stats = await call('downloads:stats'); const label = settingsCopy('архивов', 'archives'); $('#settings-archive-size').textContent = `${stats.count} ${label} · ${formatArchiveSize(stats.bytes)}`; $('#settings-archive-path').textContent = `${settingsCopy('Хранятся здесь:', 'Stored in:')} ${(stats.directories || []).join(' · ')}`; } catch { $('#settings-archive-size').textContent = settingsCopy('Размер недоступен', 'Size unavailable'); $('#settings-archive-path').textContent = settingsCopy('Папка недоступна', 'Folder unavailable'); } };
-  updateArchiveStats();
-  $('#settings-browse-archives').onclick = () => { state.view = 'download-archives'; state.archiveSelection.clear(); loadCatalog(); };
-  $('#settings-clear-archives').onclick = async (event) => { const button = event.currentTarget; const confirmation = await showAppConfirmDialog({ title: settingsCopy('Удалить архивы?', 'Delete archives?'), message: settingsCopy('Удалить все сохранённые архивы модов?', 'Delete all saved mod archives?'), confirmLabel: settingsCopy('Удалить', 'Delete'), destructive: true }); if (!confirmation.confirmed) return; button.disabled = true; try { await call('downloads:clear'); await updateArchiveStats(); toast(settingsCopy('Архивы удалены.', 'Archives deleted.')); } catch (error) { toast(error.message); } finally { button.disabled = false; } };
 }
 
 renderSettings = renderSettings;

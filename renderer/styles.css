@@ -10,6 +10,9 @@
 @media (max-width: 780px) { .titlebar { gap: 12px; overflow: hidden; }.titlebar-brand { min-width: auto; white-space: nowrap; font-size: 13px; }.top-nav { left: 50%; max-width: calc(100% - 150px); overflow-x: auto; }.top-tab { padding: 0 9px; white-space: nowrap; }.window-actions { display: none; }.sidebar { width: 70px; padding: 20px 10px; }.nav-item:not(.active) span + *, .nav-item span + *, .game-status span:last-child { display: none; }.nav-item { justify-content: center; padding: 12px 5px; }.sidebar-bottom { margin-top: auto; }.main-content { width: calc(100% - 70px); }.topbar, .content { padding-left: 22px; padding-right: 22px; }.topbar { display: block; }.top-actions { margin-top: 18px; }.search { width: 100%; }.mod-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); } }
 .social-actions { display: flex; gap: 8px; flex-wrap: wrap; }.social-button { padding: 9px 14px; border: 1px solid var(--line); border-radius: 5px; color: var(--text); text-decoration: none; font-weight: 600; }.social-button:hover { transform: translateY(-1px); }.social-telegram { border-color: #279dcc; background: #126784; }.social-discord { border-color: #6878e9; background: #3e4aa0; }.installed-file-name { color: var(--accent); font-family: monospace; }
 .search.settings-hidden { display: none !important; }
+.sidebar-bottom .play-game-button { margin-bottom: 8px; color: var(--theme-button-ink, var(--accent-ink)); background: var(--theme-button, var(--accent)); font-weight: 700; }
+.sidebar-bottom .play-game-button:hover { color: var(--theme-button-ink, var(--accent-ink)); background: color-mix(in srgb, var(--theme-button, var(--accent)) 84%, var(--theme-text, #fff)); }
+.sidebar-bottom .play-game-button:focus-visible { outline: 2px solid var(--theme-focus, var(--theme-accent, var(--accent))); outline-offset: 2px; }
 .app-modal-dialog { width: min(460px, calc(100vw - 28px)); padding: 0; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: rgba(17, 17, 17, .97); box-shadow: 0 30px 80px rgba(0, 0, 0, .55); overflow: hidden; }
 .app-modal-dialog::backdrop { background: rgba(0, 0, 0, .64); }
 .app-modal-form { display: flex; flex-direction: column; gap: 14px; padding: 20px 20px 16px; }
@@ -66,6 +69,8 @@
 	.toast { transition: none; }
 	.download-progress-track span, .download-progress-track.is-indeterminate span { animation: none; transition: none; }
 	.app-modal-dialog, .app-modal-dialog::backdrop, .app-modal-dialog.is-closing, .app-modal-dialog.is-closing::backdrop { animation: none; }
+	.cosmetic-effect-dialog, .cosmetic-effect-dialog::backdrop,
+	.cosmetic-effect-dialog.is-closing, .cosmetic-effect-dialog.is-closing::backdrop { animation: none; }
 }
 .folder-nav-item { color: var(--muted); background: transparent; }
 .folder-nav-item:hover, .folder-nav-item:focus-visible { color: var(--text); background: var(--panel-2); }

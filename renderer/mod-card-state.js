@@ -18,9 +18,7 @@ function applyModCardState() {
     }
     if (!markedInstalled) stateBadge?.remove();
     const chips = card.querySelector('.card-chips');
-    if (chips && mod.tags?.length && !chips.querySelector('.mod-tag')) {
-      mod.tags.slice(0, 3).forEach((tag) => { const node = document.createElement('span'); node.className = 'mod-tag'; node.textContent = tag; chips.prepend(node); });
-    }
+    chips?.querySelectorAll('.mod-tag').forEach((tag) => tag.remove());
   });
 }
 const modCardStateObserver = new MutationObserver(applyModCardState);

@@ -25,8 +25,19 @@ function showPackContents(pack) {
   const mods = packMods(pack);
   dialog.innerHTML = `<button class="dialog-close" type="button" aria-label="Close">×</button><div class="pack-content-body"><p class="eyebrow">PACK CONTENTS</p><h2>${escapePackText(pack.name)}</h2><p class="pack-content-count">${mods.length} mods</p><div class="pack-mod-card-grid">${mods.length ? mods.map(packCard).join('') : '<div class="empty"><strong>No mod metadata</strong>This pack was created before pack contents were stored.</div>'}</div></div>`;
   document.body.appendChild(dialog);
-  dialog.querySelector('.dialog-close').onclick = () => dialog.close();
-  dialog.onclick = (event) => { if (event.target === dialog) dialog.close(); };
+  const closeAnimated = () => {
+    if (!dialog.open || dialog.classList.contains('is-closing')) return;
+    dialog.classList.add('is-closing');
+    const finish = () => {
+      dialog.removeEventListener('animationend', finish);
+      if (dialog.open) dialog.close();
+      dialog.remove();
+    };
+    dialog.addEventListener('animationend', finish);
+    setTimeout(finish, 220);
+  };
+  dialog.querySelector('.dialog-close').onclick = closeAnimated;
+  dialog.onclick = (event) => { if (event.target === dialog) closeAnimated(); };
   dialog.addEventListener('close', () => dialog.remove());
   dialog.showModal();
 }

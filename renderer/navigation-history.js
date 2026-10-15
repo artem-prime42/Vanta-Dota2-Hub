@@ -1,5 +1,5 @@
 (() => {
-  const routeFields = ['view', 'section', 'lastModsSection', 'category', 'hero', 'heroSlot', 'heroQuery', 'author', 'authorQuery', 'authorSort', 'query', 'recentExpanded'];
+  const routeFields = ['view', 'section', 'lastModsSection', 'category', 'hero', 'heroSlot', 'heroQuery', 'query', 'cosmeticsHero', 'cosmeticsSlotFilter', 'cosmeticsSkinSearch', 'cosmeticsSearch', 'recentExpanded'];
   const snapshot = () => Object.fromEntries(routeFields.map((field) => [field, state[field]]));
   const routeKey = (route) => JSON.stringify(route);
   const entries = [snapshot()];
@@ -27,7 +27,7 @@
   }
 
   window.addEventListener('click', (event) => {
-    const target = event.target.closest('.nav-item[data-view], .top-tab, [data-card-author], [data-card-hero], [data-card-category], [data-author], [data-hero], #author-back, #hero-back, #settings-browse-archives, #download-archives-back');
+    const target = event.target.closest('.nav-item[data-view], .top-tab, [data-card-hero], [data-card-category], [data-hero], [data-cosmetics-open], #hero-back, #cosmetics-back, #settings-browse-archives, #download-archives-back');
     if (!target) return;
 
     const previous = snapshot();

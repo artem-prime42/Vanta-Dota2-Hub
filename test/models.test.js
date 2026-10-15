@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { flattenCatalog, searchMods } = require('../src/core/models');
+const { flattenCatalog, heroDisplayName, normalizeHeroKey, searchMods } = require('../src/core/models');
 
 test('flattens the external catalog and normalizes ids', () => {
   const mods = flattenCatalog({ mods: { modsData: { heroes: [{ name: 'Invoker Arcana', file: 'x.zip', categoryId: 'heroes' }] } } });
@@ -23,9 +23,23 @@ test('search filters by query and category without mutating input', () => {
   assert.equal(mods.length, 2);
 });
 
+test('search supports locally imported mods without catalog tags', () => {
+  const mods = [{ id: 'local-import', name: 'Imported VPK', author: 'Local', categoryId: 'heroes', tags: undefined }];
+  assert.deepEqual(searchMods(mods, 'imported', { category: 'heroes' }).map((mod) => mod.id), ['local-import']);
+  assert.deepEqual(searchMods([{ ...mods[0], tags: 'weapon' }], 'weapon').map((mod) => mod.id), ['local-import']);
+});
+
 test('hero browsing can narrow the catalog to one hero', () => {
   const mods = flattenCatalog({ mods: { modsData: { heroes: [{ name: 'Invoker Set', hero: 'invoker' }, { name: 'Pudge Set', hero: 'pudge' }] } } });
   assert.deepEqual(searchMods(mods, '', { hero: 'invoker' }).map((mod) => mod.name), ['Invoker Set']);
+});
+
+test('multi-hero mods are normalized and visible under each assigned hero', () => {
+  const mods = flattenCatalog({ mods: { modsData: { heroes: [
+    { id: 'shared-set', name: 'Shared Set', heroes: ['antimage', 'axe'] },
+  ] } } });
+  assert.deepEqual(searchMods(mods, '', { hero: 'anti_mage' }).map((mod) => mod.name), ['Shared Set']);
+  assert.deepEqual(searchMods(mods, '', { hero: 'axe' }).map((mod) => mod.name), ['Shared Set']);
 });
 
 test('normalizes hero aliases with spaces and dashes to canonical ids', () => {
@@ -38,6 +52,15 @@ test('normalizes hero aliases with spaces and dashes to canonical ids', () => {
   assert.deepEqual(searchMods(mods, '', { hero: 'windranger' }).map((mod) => mod.name), ['Windrunner Set']);
   assert.deepEqual(searchMods(mods, '', { hero: 'underlord' }).map((mod) => mod.name), ['Abyssal Underlord Set']);
   assert.deepEqual(searchMods(mods, '', { hero: 'clockwerk' }).map((mod) => mod.name), ['Rattletrap Set']);
+});
+
+test('normalizes legacy Treant and Underlord internal names to canonical hero IDs', () => {
+  assert.equal(normalizeHeroKey('treant'), 'treant_protector');
+  assert.equal(normalizeHeroKey('npc_dota_hero_treant'), 'treant_protector');
+  assert.equal(normalizeHeroKey('abyssal_underlord'), 'underlord');
+  assert.equal(normalizeHeroKey('npc_dota_hero_abyssal_underlord'), 'underlord');
+  assert.equal(heroDisplayName('treant'), 'Treant Protector');
+  assert.equal(heroDisplayName('abyssal_underlord'), 'Underlord');
 });
 
 test('filters malformed special patches without dropping valid patches or ordinary catalog entries', () => {

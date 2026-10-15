@@ -106,12 +106,10 @@ test('legacy record migration continues startup when all library slots are occup
     },
   });
   const service = new AppService({ rootDir: root });
-  let catalogLoaded = false;
-  service.catalog.load = async () => { catalogLoaded = true; return { mods: [], meta: { offline: false } }; };
 
   await assert.doesNotReject(() => service.init());
 
-  assert.equal(catalogLoaded, true);
+  assert.equal(service.catalog, undefined, 'initialization does not create or fetch an online catalog');
   assert.equal(service.storage.state.installedMods.one.fileName, 'pak99_dir.vpk');
   assert.equal(service.storage.state.installedMods.two.fileName, undefined);
   assert.equal(await fs.readFile(path.join(libraryDir, 'pak99_dir.vpk'), 'utf8'), 'legacy one');

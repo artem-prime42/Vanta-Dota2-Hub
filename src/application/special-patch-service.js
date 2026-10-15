@@ -5,13 +5,30 @@ const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { VpkReader, VpkWriter } = require('vpk-tools');
+const { buildCosmeticReplacements } = require('./cosmetic-builder');
 
 const execFileAsync = promisify(execFile);
 const PATCH_MARKER = 'Patched by DotaModdingCommunity Patcher';
-const SEARCH_PATH = 'DotaModdingCommunityMods';
+const SEARCH_PATH = 'VantaMods';
+const LEGACY_SEARCH_PATH = 'DotaModdingCommunityMods';
 const BRANCH_SIGNATURE_PREFIX = '...\\..\\..\\dota\\gameinfo_branchspecific.gi~';
 const GAMEINFO_RELATIVE_PATH = path.join('dota', 'gameinfo_branchspecific.gi');
-const SPECIAL_TYPES = new Set(['tower', 'weather']);
+const SPECIAL_TYPES = new Set(['tower', 'weather', 'cosmetics']);
+const LOCAL_COSMETICS_ID = 'vanta-generated-cosmetics';
+
+function localCosmeticsMod() {
+  return {
+    id: LOCAL_COSMETICS_ID,
+    name: 'Generated Hero Cosmetics',
+    author: 'VANTA',
+    categoryId: 'heroes',
+    modType: 'special_patch',
+    specialType: 'cosmetics',
+    version: 'generated',
+    currentVersion: 'generated',
+    requiredFiles: [],
+  };
+}
 const SOURCE2_BASE_SEARCH_PATHS = [
   ['Game_Language', 'dota_*LANGUAGE*'],
   ['Game_LowViolence', 'dota_lv'],
@@ -185,6 +202,16 @@ function buildPlatformSearchPaths(platform, patchPath = SEARCH_PATH) {
   ];
 }
 
+function isManagedPatchMount(value) {
+  const normalized = String(value || '').replace(/^"|"$/g, '').toLowerCase();
+  return normalized === SEARCH_PATH.toLowerCase() || normalized === LEGACY_SEARCH_PATH.toLowerCase();
+}
+
+function isManagedPatchMountLine(line) {
+  const match = String(line || '').trim().match(/^(?:Game|Mod)\s+"?([^"\s]+)"?(?:\s|$)/i);
+  return Boolean(match && isManagedPatchMount(match[1]));
+}
+
 function ensurePatchSearchPath(gameinfoText, platform = process.platform) {
   const fileSystem = findKeyBlock(gameinfoText, 'FileSystem');
   if (!fileSystem) throw new Error('Dota gameinfo_branchspecific.gi does not contain a FileSystem block');
@@ -198,7 +225,7 @@ function ensurePatchSearchPath(gameinfoText, platform = process.platform) {
     const lines = block.split(/\r?\n/).filter((line) => {
       const trimmed = line.trim();
       if (trimmed === `// ${PATCH_MARKER}`) return false;
-      return !new RegExp(`^(?:Game|Mod)\\s+"?${SEARCH_PATH}"?(?:\\s|$)`, 'i').test(trimmed);
+      return !isManagedPatchMountLine(trimmed);
     });
     while (lines.length && !lines[0].trim()) lines.shift();
     while (lines.length && !lines.at(-1).trim()) lines.pop();
@@ -231,7 +258,7 @@ function removePatchSearchPath(gameinfoText) {
     const onlyPatchEntries = block.split(/\r?\n/).every((line) => {
       const trimmed = line.trim();
       return !trimmed || trimmed === `// ${PATCH_MARKER}`
-        || new RegExp(`^(?:Game|Mod)\\s+"?${SEARCH_PATH}"?(?:\\s|$)`, 'i').test(trimmed);
+        || isManagedPatchMountLine(trimmed);
     });
     if (text.slice(keyIndex, searchPaths.openIndex).includes(PATCH_MARKER) || (block.includes(PATCH_MARKER) && onlyPatchEntries)) {
       let end = searchPaths.closeIndex + 1;
@@ -244,7 +271,7 @@ function removePatchSearchPath(gameinfoText) {
   const lines = text.split(/\r?\n/).filter((line) => {
     const trimmed = line.trim();
     if (trimmed === `// ${PATCH_MARKER}`) return false;
-    return !new RegExp(`^(?:Game|Mod)\\s+"?${SEARCH_PATH}"?(?:\\s|$)`, 'i').test(trimmed);
+    return !isManagedPatchMountLine(trimmed);
   });
   return lines.join(lineEnding);
 }
@@ -317,7 +344,7 @@ function countPatchSignatureLines(signaturesText) {
 
 function hasPatchSearchPath(gameinfoText) {
   return String(gameinfoText || '').includes(PATCH_MARKER)
-    || /^\s*(?:Game|Mod)\s+"?DotaModdingCommunityMods"?(?:\s|$)/im.test(String(gameinfoText || ''));
+    || String(gameinfoText || '').split(/\r?\n/).some(isManagedPatchMountLine);
 }
 
 function readBuildId(text) {
@@ -470,12 +497,16 @@ class SpecialPatchService {
     const binRoot = path.join(root, 'bin');
     const modVpk = path.join(root, SEARCH_PATH, 'pak01_dir.vpk');
     const modVpkRuntimeAlias = path.join(root, SEARCH_PATH, 'pak01.vpk');
+    const legacyModDirectory = path.join(root, LEGACY_SEARCH_PATH);
+    const legacyModVpkCandidates = [path.join(legacyModDirectory, 'pak01_dir.vpk'), path.join(legacyModDirectory, 'pak01.vpk')];
     return {
       root,
       pak01: path.join(root, 'dota', 'pak01_dir.vpk'),
       gameinfo: path.join(root, GAMEINFO_RELATIVE_PATH),
       binRoot,
       modDirectory: path.join(root, SEARCH_PATH),
+      legacyModDirectory,
+      legacyModVpkCandidates,
       modVpk,
       modVpkRuntimeAlias,
       modVpkCandidates: [modVpk, modVpkRuntimeAlias],
@@ -523,24 +554,33 @@ class SpecialPatchService {
 
   async loadDefinition(file) {
     if (!file?.url || !file?.gitBlobSha || !file?.itemId) throw new Error('A special patch is missing a pinned definition file, item ID, or integrity hash.');
-    const response = await this.fetchImpl(file.url, { cache: 'no-store', headers: { accept: 'text/plain' } });
-    if (!response.ok) throw new Error(`Could not download patch definition (${response.status}). Try again later.`);
-    const text = await response.text();
-    const data = Buffer.from(text, 'utf8');
-    if (gitBlobHash(data) !== String(file.gitBlobSha).toLowerCase()) throw new Error(`Integrity check failed for ${file.fileName || file.url}. The upstream patch file has changed.`);
+    const cacheDirectory = path.join(this.stateDirectory, 'definitions');
+    const cachedFile = path.join(cacheDirectory, `${String(file.gitBlobSha).toLowerCase()}.txt`);
+    await fs.mkdir(cacheDirectory, { recursive: true });
+    let data = await fs.readFile(cachedFile).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+    if (!data || gitBlobHash(data) !== String(file.gitBlobSha).toLowerCase()) {
+      const response = await this.fetchImpl(file.url, { cache: 'no-store', headers: { accept: 'text/plain' } });
+      if (!response.ok) throw new Error(`Could not download patch definition (${response.status}). Try again later.`);
+      data = Buffer.from(await response.text(), 'utf8');
+      if (gitBlobHash(data) !== String(file.gitBlobSha).toLowerCase()) throw new Error(`Integrity check failed for ${file.fileName || file.url}. The upstream patch file has changed.`);
+      await fs.writeFile(cachedFile, data);
+    }
+    const text = data.toString('utf8');
     const item = extractItemBlock(text);
     if (item.id !== String(file.itemId)) throw new Error(`Patch definition ${file.fileName || file.url} targets item ${item.id}, expected ${file.itemId}.`);
     return item;
   }
 
-  async createPatchedVpk(pak01Path, definitions, tempPath) {
+  async createPatchedVpk(pak01Path, definitions, tempPath, cosmeticSelections = {}) {
     const base = await this.getBaseItemsGame(pak01Path);
     const replacements = new Map();
     for (const { file, item } of definitions) {
       if (replacements.has(item.id)) throw new Error(`More than one selected special patch changes Dota item ${item.id}. Keep only one ${file.specialType || 'patch'} of this kind installed.`);
       replacements.set(item.id, item);
     }
-    const patchedItemsGame = replaceItemEntries(base.text, replacements);
+    let patchedItemsGame = replaceItemEntries(base.text, replacements);
+    const cosmetics = buildCosmeticReplacements(patchedItemsGame, cosmeticSelections);
+    if (cosmetics.size) patchedItemsGame = replaceItemEntries(patchedItemsGame, cosmetics);
     const writer = new VpkWriter();
     writer.addFile('scripts/items/items_game.txt', Buffer.from(patchedItemsGame, 'utf8'));
     writer.write(tempPath);
@@ -551,7 +591,11 @@ class SpecialPatchService {
       if (files.length !== 1 || files[0] !== 'scripts/items/items_game.txt') throw new Error('Generated patch VPK does not contain the expected items_game.txt override.');
       if (!reader.readFile(files[0]).equals(Buffer.from(patchedItemsGame, 'utf8'))) throw new Error('Generated patch VPK failed content verification.');
     } finally { reader?.close(); }
-    return { baseItemsGameHash: base.hash, patchedItemsGameHash: await hashBuffer(Buffer.from(patchedItemsGame, 'utf8')) };
+    return {
+      baseItemsGameHash: base.hash,
+      patchedItemsGameHash: await hashBuffer(Buffer.from(patchedItemsGame, 'utf8')),
+      generatedCosmetics: cosmetics.size,
+    };
   }
 
   async readSpecialManifest() {
@@ -636,7 +680,7 @@ class SpecialPatchService {
     const managedDotaFile = [
       /\/game\/dota\/gameinfo_branchspecific\.gi$/i,
       /\/game\/bin\/(?:linuxsteamrt64|win64)\/dota\.signatures$/i,
-      /\/game\/DotaModdingCommunityMods\/pak01(?:_dir)?\.vpk$/i,
+      /\/game\/(?:VantaMods|DotaModdingCommunityMods)\/pak01(?:_dir)?\.vpk$/i,
     ].some((pattern) => pattern.test(portable));
     if (!inState && !managedDotaFile) throw new Error('Refusing to journal a path outside VANTA data or the supported Dota patch files.');
     return resolved;
@@ -731,6 +775,34 @@ class SpecialPatchService {
     });
   }
 
+  async applyCosmetics(selections) {
+    const previous = this.storage.state.settings.cosmeticLoadout || {};
+    const next = selections && typeof selections === 'object' && !Array.isArray(selections) ? selections : {};
+    if (!Object.keys(next).length) {
+      if (this.storage.state.installedMods?.[LOCAL_COSMETICS_ID]) return this.remove(LOCAL_COSMETICS_ID);
+      const activePatch = Object.values(this.storage.state.installedMods || {})
+        .filter((record) => record?.modType === 'special_patch')
+        .map((record) => this.getMods().find((mod) => mod.id === record.id))
+        .find(Boolean);
+      await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: {} } });
+      if (activePatch) {
+        try { return await this.apply(activePatch); }
+        catch (error) {
+          await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: previous } });
+          throw error;
+        }
+      }
+      return { applied: 0, installed: false };
+    }
+    await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: next } });
+    try {
+      return await this.apply(localCosmeticsMod());
+    } catch (error) {
+      await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: previous } });
+      throw error;
+    }
+  }
+
   async applyLocked(mod, { replacingId = null } = {}) {
       if (!this.isSpecialPatch(mod)) throw new Error('This catalog entry is not a supported special patch.');
       const paths = this.getDotaPaths();
@@ -741,16 +813,19 @@ class SpecialPatchService {
       const signaturesPath = await this.findSignaturesPath(paths);
       const installed = Object.values(this.storage.state.installedMods || {}).filter((record) => record?.modType === 'special_patch');
       const catalogMods = this.getMods();
-      const installedCatalogMods = installed.map((record) => catalogMods.find((candidate) => candidate.id === record.id));
+      const installedCatalogMods = installed.map((record) => record.id === LOCAL_COSMETICS_ID
+        ? localCosmeticsMod()
+        : catalogMods.find((candidate) => candidate.id === record.id));
       if (installedCatalogMods.some((entry) => !entry)) throw new Error('An installed special patch is no longer available in the catalog. Refresh the catalog or remove that patch before continuing.');
       const activeMods = installedCatalogMods
         .filter((candidate) => candidate.id !== replacingId && candidate.specialType !== mod.specialType && candidate.id !== mod.id);
       activeMods.push(mod);
       const definitionFiles = [];
-      const fileCount = activeMods.reduce((total, entry) => total + (entry.requiredFiles || []).length, 0);
-      if (!fileCount) throw new Error('This special patch has no required definition files.');
+      const fileCount = activeMods.reduce((total, entry) => total + (entry.specialType === 'cosmetics' ? 0 : (entry.requiredFiles || []).length), 0);
+      if (!fileCount && !activeMods.some((entry) => entry.specialType === 'cosmetics')) throw new Error('This special patch has no required definition files.');
       let completedFiles = 0;
       for (const activeMod of activeMods) {
+        if (activeMod.specialType === 'cosmetics') continue;
         if (!this.isSpecialPatch(activeMod)) throw new Error(`Catalog entry ${activeMod.id} has invalid special-patch metadata.`);
         for (const file of activeMod.requiredFiles) {
           this.progress(mod.id, `Downloading ${file.fileName || activeMod.name}…`, Math.round((completedFiles / fileCount) * 20));
@@ -766,7 +841,7 @@ class SpecialPatchService {
       let previousInstalledMods = null;
       try {
         this.progress(mod.id, 'Reading current Dota item data…', 25);
-        const outputMetadata = await this.createPatchedVpk(paths.pak01, definitionFiles, temporaryVpk);
+        const outputMetadata = await this.createPatchedVpk(paths.pak01, definitionFiles, temporaryVpk, this.storage.state.settings.cosmeticLoadout || {});
         this.progress(mod.id, 'Preparing the client patch…', 60);
         const gameinfoBefore = await fs.readFile(paths.gameinfo);
         const signaturesBefore = await fs.readFile(signaturesPath);
@@ -796,6 +871,12 @@ class SpecialPatchService {
         const existingModVpk = [];
         for (const candidate of paths.modVpkWriteTargets) {
           if (await this.exists(candidate)) existingModVpk.push(candidate);
+        }
+        const legacyOwnedVpkPaths = [];
+        if (sameGamePath(previousManifest?.gamePath, paths.root) && previousManifest?.modVpkHash) {
+          for (const candidate of paths.legacyModVpkCandidates) {
+            if (await this.exists(candidate) && await hashFile(candidate) === previousManifest.modVpkHash) legacyOwnedVpkPaths.push(candidate);
+          }
         }
         const vpkBeforeExists = existingModVpk.length > 0;
         const vpkBeforePath = vpkBeforeExists ? existingModVpk[0] : null;
@@ -873,7 +954,7 @@ class SpecialPatchService {
           if (!(await this.exists(foreignBackup))) await fs.copyFile(vpkBeforePath, foreignBackup);
         }
         previousInstalledMods = { ...(this.storage.state.installedMods || {}) };
-        transactionFiles = [...paths.modVpkCandidates, paths.gameinfo, signaturesPath, this.manifestPath];
+        transactionFiles = [...paths.modVpkCandidates, ...legacyOwnedVpkPaths, paths.gameinfo, signaturesPath, this.manifestPath];
         if (staleSignaturePath && staleSignatureBackup && await this.exists(staleSignatureBackup)) transactionFiles.push(staleSignaturePath);
         await this.recordTransaction(transactionFiles);
         this.progress(mod.id, 'Writing the special-patch VPK…', 70);
@@ -882,6 +963,8 @@ class SpecialPatchService {
         for (const targetPath of paths.modVpkWriteTargets) {
           await this.installVpk(temporaryVpk, targetPath);
         }
+        for (const legacyPath of legacyOwnedVpkPaths) await fs.rm(legacyPath, { force: true });
+        if (legacyOwnedVpkPaths.length) await fs.rmdir(paths.legacyModDirectory).catch(() => {});
         if (staleSignaturePath && staleSignatureBackup && await this.exists(staleSignatureBackup)) {
           await this.atomicWrite(staleSignaturePath, await fs.readFile(staleSignatureBackup));
         }
@@ -960,7 +1043,10 @@ class SpecialPatchService {
       if (!record || record.modType !== 'special_patch') throw new Error('Special patch was not found in the Library.');
       const activeRecords = Object.values(this.storage.state.installedMods || {}).filter((item) => item?.modType === 'special_patch' && item.id !== id);
       const catalogMods = this.getMods();
-      const remaining = activeRecords.map((item) => catalogMods.find((candidate) => candidate.id === item.id)).filter(Boolean);
+      const remaining = activeRecords.map((item) => item.id === LOCAL_COSMETICS_ID
+        ? localCosmeticsMod()
+        : catalogMods.find((candidate) => candidate.id === item.id)).filter(Boolean);
+      const previousCosmeticLoadout = this.storage.state.settings.cosmeticLoadout || {};
       let removeAllSpecialPatches = false;
       if (remaining.length) {
         try { await this.findSignaturesPath(this.getDotaPaths()); }
@@ -971,8 +1057,13 @@ class SpecialPatchService {
           const staged = { ...before };
           delete staged[id];
           this.storage.state.installedMods = staged;
+          if (id === LOCAL_COSMETICS_ID) await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: {} } });
           try { await this.applyLocked(first, { replacingId: first.id }); }
-          catch (error) { this.storage.state.installedMods = before; throw error; }
+          catch (error) {
+            this.storage.state.installedMods = before;
+            if (id === LOCAL_COSMETICS_ID) await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: previousCosmeticLoadout } });
+            throw error;
+          }
           return true;
         }
       }
@@ -997,8 +1088,15 @@ class SpecialPatchService {
         if (!(await this.exists(candidate))) return false;
         return manifest.modVpkHash && await hashFile(candidate) === manifest.modVpkHash;
       }));
-      const modVpkExists = modVpkMatches.some(Boolean) || (await Promise.all(paths.modVpkCandidates.map((candidate) => this.exists(candidate)))).some(Boolean);
-      if (modVpkExists && !modVpkMatches.some(Boolean)) throw new Error('The special-patch VPK changed outside VANTA. It was left untouched; verify Dota files before removing the Library entry.');
+      const legacyModVpkMatches = await Promise.all(paths.legacyModVpkCandidates.map(async (candidate) => {
+        if (!(await this.exists(candidate))) return false;
+        return manifest.modVpkHash && await hashFile(candidate) === manifest.modVpkHash;
+      }));
+      const allModVpkCandidates = [...paths.modVpkCandidates, ...paths.legacyModVpkCandidates];
+      const allModVpkMatches = [...modVpkMatches, ...legacyModVpkMatches];
+      const modVpkExists = (await Promise.all(allModVpkCandidates.map((candidate) => this.exists(candidate)))).some(Boolean);
+      if (modVpkExists && !allModVpkMatches.some(Boolean)) throw new Error('The special-patch VPK changed outside VANTA. It was left untouched; verify Dota files before removing the Library entry.');
+      const ownedModVpkPaths = allModVpkCandidates.filter((candidate, index) => allModVpkMatches[index]);
 
       const backupDirectory = await this.getBackupDirectory(paths.root, [manifest.gamePath]);
       const backupGameinfo = path.join(backupDirectory, 'gameinfo_branchspecific.gi');
@@ -1064,14 +1162,13 @@ class SpecialPatchService {
         throw new Error('A Dota patch file is still modified, but its original backup is unavailable or no longer matches. No files were changed; verify Dota 2 files in Steam before retrying.');
       }
 
-      const transaction = [...paths.modVpkCandidates, this.manifestPath];
+      const transaction = [...paths.modVpkCandidates, ...ownedModVpkPaths.filter((candidate) => paths.legacyModVpkCandidates.includes(candidate)), this.manifestPath];
       if (gameinfoShouldRestore || gameinfoShouldStrip) transaction.push(paths.gameinfo);
       if (signaturesShouldRestore || signaturesShouldStrip) transaction.push(signaturesPath);
       await this.recordTransaction(transaction);
       try {
-        for (const candidate of paths.modVpkCandidates) {
-          if (await this.exists(candidate)) await fs.rm(candidate, { force: true });
-        }
+        for (const candidate of ownedModVpkPaths) await fs.rm(candidate, { force: true });
+        if (ownedModVpkPaths.some((candidate) => paths.legacyModVpkCandidates.includes(candidate))) await fs.rmdir(paths.legacyModDirectory).catch(() => {});
         if (await this.exists(foreignBackup)) await this.installVpk(foreignBackup, paths.modVpk);
         if (gameinfoShouldRestore) await this.atomicWrite(paths.gameinfo, originalGameinfo);
         else if (gameinfoShouldStrip) await this.atomicWrite(paths.gameinfo, gameinfoFallback);
@@ -1084,12 +1181,16 @@ class SpecialPatchService {
           }
         } else delete installedMods[id];
         await this.storage.patch({ installedMods });
+        if (id === LOCAL_COSMETICS_ID || removeAllSpecialPatches) {
+          await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: {} } });
+        }
         await fs.rm(this.manifestPath, { force: true });
         await fs.rm(this.journalPath, { force: true });
       } catch (error) {
         const journal = JSON.parse(await fs.readFile(this.journalPath, 'utf8'));
         await this.rollbackTransaction(journal);
         await fs.rm(this.journalPath, { force: true });
+        if (id === LOCAL_COSMETICS_ID) await this.storage.patch({ settings: { ...this.storage.state.settings, cosmeticLoadout: previousCosmeticLoadout } });
         throw error;
       }
       return true;
@@ -1137,7 +1238,7 @@ class SpecialPatchService {
     let changed = false;
     for (const [id, record] of Object.entries(installedMods)) {
       if (record?.modType !== 'special_patch') continue;
-      const mod = catalog.find((entry) => entry.id === id);
+      const mod = id === LOCAL_COSMETICS_ID ? localCosmeticsMod() : catalog.find((entry) => entry.id === id);
       const result = await this.inspect(mod, record);
       if (record.specialPatchState !== result.status || record.requiresPatchUpdate !== result.requiresPatchUpdate || Boolean(record.patchError) !== Boolean(result.error)) {
         installedMods[id] = { ...record, specialPatchState: result.status, requiresPatchUpdate: result.requiresPatchUpdate, patchError: result.error || null };
@@ -1152,6 +1253,7 @@ class SpecialPatchService {
 
 module.exports = {
   GAMEINFO_RELATIVE_PATH,
+  LEGACY_SEARCH_PATH,
   PATCH_MARKER,
   SEARCH_PATH,
   SpecialPatchService,

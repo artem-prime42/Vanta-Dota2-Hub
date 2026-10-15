@@ -40,7 +40,7 @@ test('Linux diagnostic captures project-parser verification for primary Weather 
   t.after(() => fs.rm(temporary, { recursive: true, force: true }));
   const rootDir = path.join(temporary, 'userdata');
   const gameRoot = path.join(temporary, 'steamapps', 'common', 'dota 2 beta', 'game');
-  const modDirectory = path.join(gameRoot, 'DotaModdingCommunityMods');
+  const modDirectory = path.join(gameRoot, 'VantaMods');
   const gameinfoPath = path.join(gameRoot, 'dota', 'gameinfo_branchspecific.gi');
   const signaturesPath = path.join(gameRoot, 'bin', 'linuxsteamrt64', 'dota.signatures');
   await fs.mkdir(path.dirname(gameinfoPath), { recursive: true });
@@ -91,7 +91,7 @@ test('Linux diagnostic captures project-parser verification for primary Weather 
 
   const report = await collectLinuxDiagnostic({
     service,
-    appVersion: '2.0.12',
+    appVersion: '2.0.13',
     steamRootsOverride: [],
     runningSteamClientsOverride: [],
     processDiagnosticsOverride: {
@@ -116,7 +116,7 @@ test('Linux diagnostic captures project-parser verification for primary Weather 
     },
   });
   const { weatherTowersVpk, gameinfoValidation, signaturesValidation } = report.game;
-  assert.equal(report.vantaVersion, '2.0.12');
+  assert.equal(report.vantaVersion, '2.0.13');
   assert.equal(report.runningDotaDetected, 'NO');
   assert.equal(report.runningDotaExecutable, 'UNKNOWN');
   assert.equal(report.runningDotaPathNormalized, 'UNKNOWN');
@@ -142,7 +142,7 @@ test('Linux diagnostic captures project-parser verification for primary Weather 
   assert.equal(signaturesValidation.baseline.expectedHashMatches, true);
   assert.equal(signaturesValidation.current.signatureMatchesExactGameinfo, true);
   assert.equal(signaturesValidation.current.postDigestVantaBranchRecordCount, 1);
-  const consoleLog = report.logs.inventory.find((entry) => entry.kind === 'dota-console' && entry.absolutePath.endsWith('DotaModdingCommunityMods/console.log'));
+  const consoleLog = report.logs.inventory.find((entry) => entry.kind === 'dota-console' && entry.absolutePath.endsWith('VantaMods/console.log'));
   assert.ok(consoleLog);
   assert.equal(consoleLog.signalCounts.find((entry) => entry.name === 'vpk_read_or_crc_error').count, 1);
   assert.equal(consoleLog.signalCounts.find((entry) => entry.name === 'content_marked_corrupt').count, 1);

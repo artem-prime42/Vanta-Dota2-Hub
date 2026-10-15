@@ -1,5 +1,5 @@
 document.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-card-author], [data-card-hero], [data-card-category]');
+  const button = event.target.closest('[data-card-hero], [data-card-category]');
   if (!button) return;
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -10,13 +10,7 @@ document.addEventListener('click', (event) => {
     shaders: 'effects', 'ti-bp-effects': 'effects', 'item-effects': 'effects', 'ranged-attack': 'effects', 'high-five': 'effects',
     packs: 'interface', optimization: 'other', other: 'other', sites: 'other', announcers: 'interface', music: 'interface', sounds: 'other', 'mega-kill': 'interface', fonts: 'other'
   };
-  if (button.dataset.cardAuthor) {
-    state.view = 'authors';
-    state.author = button.dataset.cardAuthor;
-    state.authorQuery = '';
-    state.authorSort = 'default';
-    document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === 'authors'));
-  } else if (button.dataset.cardHero) {
+  if (button.dataset.cardHero) {
     state.view = 'mods';
     state.section = 'heroes';
     state.hero = button.dataset.cardHero;

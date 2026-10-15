@@ -2,46 +2,26 @@ const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('node:crypto');
 const { VpkReader, VpkWriter } = require('vpk-tools');
-const { JsonStorage } = require('../../infrastructure/storage');
-const { CatalogClient } = require('../../infrastructure/catalog-client');
 const { DownloadManager } = require('../../infrastructure/download-manager');
 const { ModManager } = require('../../application/mod-manager');
-const { SpecialPatchService } = require('../../application/special-patch-service');
+const { SpecialPatchService, isDotaRunning } = require('../../application/special-patch-service');
+const { VantaModLibrary } = require('../../application/vanta-mod-library');
+const { VantaInstaller } = require('../../application/vanta-installer');
+const { JsonStorage } = require('../../infrastructure/storage');
+const { DotaDiagnosticsService } = require('../../application/dota-diagnostics-service');
+const { SPECIAL_PATCH_CATALOG } = require('../../application/special-patch-catalog');
 const { SavedPackStore } = require('../../infrastructure/saved-pack-store');
 const { detectDota, resolveDotaGamePath } = require('../../infrastructure/steam-detector');
 const { searchMods } = require('../../core/models');
 const { detectExternalFiles } = require('../../infrastructure/external-files');
 const { HeroGridService } = require('../../infrastructure/hero-grid-service');
 const { ThemeManager, SEMANTIC_THEME_TOKENS } = require('../../infrastructure/theme-manager');
+const { R2Provider } = require('../../infrastructure/r2-provider');
 const { migrateLegacyUserData } = require('../../infrastructure/user-data-migration');
+const { sanitizeCosmeticSelections } = require('../../application/cosmetic-builder');
+const { normalizeHeroKey } = require('../../core/models');
 
 const DISCORD_APP_ID = '1551207182744166511';
-
-const AUTHOR_AVATARS = {
-  papapodzaborniy: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/papapodzaborniy.jpg',
-  dota2pornfx: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/dota2pornfx.png',
-  darkness: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/darkness.jpg',
-  arthas: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/arthas.jpg',
-  xiiipsiblade: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/XIIIpsiblade.jpg',
-  dota2vpk: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/dota2vpk.jpg',
-  mopsyara: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/mopsyara.jpg',
-  tenkay: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/tenkay.jpg',
-  nahuitosay: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/NahuiToSay.jpg',
-  hi: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/hi.jpg',
-  senop: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/senop.jpg',
-  dddddddddddd: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/dddddddddddddd.jpg',
-  fin: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/fin.jpg',
-  ceomods: 'https://raw.githubusercontent.com/artem-prime42/dota2-media/main/images/Dikiychyvak.jpg',
-};
-const HIDDEN_AUTHORS = /^unknown(?: author)?$/i;
-
-const SECTION_CATEGORIES = {
-  heroes: ['heroes', 'hero-items', 'herofx'],
-  world: ['terrains', 'trees', 'river', 'creeps', 'towers', 'weather', 'roshan', 'ancient', 'tormentor', 'wards', 'couriers'],
-  interface: ['backgrounds', 'huds', 'emblems', 'versus-screens', 'item-icons', 'ranks', 'pings', 'cursors', 'announcers', 'mega-kill', 'music', 'packs'],
-  effects: ['shaders', 'ti-bp-effects', 'item-effects', 'ranged-attack', 'high-five', 'creep-deny'],
-  other: ['optimization', 'other', 'sites', 'sounds', 'hero-sounds', 'pedestal'],
-};
 
 function languageFolderMatches(recordFolder, selectedFolder) {
   if (!recordFolder || !selectedFolder) return true;
@@ -82,23 +62,32 @@ async function resolveGameRelativePath(gamePath, relativePath) {
 }
 
 class AppService {
-  constructor({ rootDir, onProgress = () => {} }) {
+  constructor({ rootDir, onProgress = () => {}, processRunning = isDotaRunning }) {
     this.rootDir = rootDir;
     this.onProgress = onProgress;
+    this.processRunning = processRunning;
     this.userDataMigration = null;
     this.storage = new JsonStorage(rootDir);
     this.savedPacks = new SavedPackStore({ rootDir });
-    this.catalog = new CatalogClient({ rootDir });
+    this.buildCosmeticListing = require('../../application/cosmetic-builder').buildCosmeticListing;
+    this.cosmeticListingCache = null;
+    this.cosmeticListingCacheFile = path.join(rootDir, 'cache', 'hero-cosmetics.json');
     this.fileHashCache = new Map();
     const dataParentDir = path.dirname(rootDir);
     const legacyRootDirs = ['VANTA', 'VANTA DOTA2 HUB', 'VANTA Dota'].map((name) => path.join(dataParentDir, name)).filter((directory) => directory !== rootDir);
     this.downloads = new DownloadManager(rootDir, onProgress, legacyRootDirs);
     this.activeVpkHashCache = null;
+    this.reinstallPromise = null;
     this.gamePath = null;
-    this.mods = new ModManager({ rootDir, storage: this.storage, downloads: this.downloads, getGamePath: () => this.gamePath, getLanguageFolder: () => this.storage.state.settings.langSuffix || 'dota', onProgress });
-    this.specialPatches = new SpecialPatchService({ rootDir, storage: this.storage, getGamePath: () => this.gamePath, getMods: () => this.catalog.mods, onProgress });
+    this.mods = new ModManager({ rootDir, storage: this.storage, downloads: this.downloads, getGamePath: () => this.gamePath, getLanguageFolder: () => this.storage.state.settings.langSuffix || 'dota', onProgress, processRunning });
+    this.specialPatches = new SpecialPatchService({ rootDir, storage: this.storage, getGamePath: () => this.gamePath, getMods: () => this.getAvailableMods(), onProgress });
+    this.library = new VantaModLibrary({ rootDir, storage: this.storage, installer: null });
+    this.installer = new VantaInstaller({ modManager: this.mods });
+    this.library.installer = this.installer;
+    this.r2 = new R2Provider({ indexUrl: '' });
     this.heroGrids = new HeroGridService({ rootDir, storage: this.storage, getGamePath: () => this.gamePath, getLanguageFolder: () => this.storage.state.settings.langSuffix || 'russian' });
     this.themeManager = new ThemeManager({ rootDir });
+    this.dotaDiagnostics = new DotaDiagnosticsService({ getGamePath: () => this.gamePath, storage: this.storage, library: this.mods.library, processRunning, getBuildId: (gamePath) => this.specialPatches.currentBuildId(gamePath) });
   }
 
   async init() {
@@ -111,6 +100,7 @@ class AppService {
     }
     await this.savedPacks.init();
     await this.mods.init();
+    await this.library.init();
     await this.specialPatches.init();
     const savedGamePath = this.storage.state.settings.gamePath || null;
     this.gamePath = await resolveDotaGamePath(savedGamePath);
@@ -121,16 +111,16 @@ class AppService {
     if (this.gamePath && this.gamePath !== savedGamePath) {
       await this.storage.patch({ settings: { ...this.storage.state.settings, gamePath: this.gamePath } });
     }
-    if (this.gamePath) await this.mods.moveInstalledMods(langSuffix);
-    const catalog = await this.catalog.load();
-    await this.themeManager.setCatalogThemes(catalog.themes);
+    if (this.gamePath && !(await this.processRunning())) await this.mods.moveInstalledMods(langSuffix);
+    this.r2.indexUrl = String(this.storage.state.settings.r2IndexUrl || '').trim();
     const activeThemeId = this.storage.state.settings.activeThemeId || this.themeManager.getActiveThemeId();
     await this.themeManager.setActiveTheme(activeThemeId, { persist: true });
     if (this.storage.state.settings.activeThemeId !== this.themeManager.getActiveThemeId()) {
       await this.storage.patch({ settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId() } });
     }
     await this.specialPatches.refreshStates();
-    return this.snapshot(catalog);
+    await this.getCosmeticListing();
+    return this.snapshot();
   }
 
   getPackMembership() {
@@ -144,7 +134,17 @@ class AppService {
     return membership;
   }
 
-  snapshot(catalog = { mods: this.catalog.mods, meta: this.catalog.meta }) {
+  getAvailableMods() {
+    const builtInIds = new Set(SPECIAL_PATCH_CATALOG.map((mod) => mod.id));
+    const local = this.library.list().filter((mod) => mod.type !== 'theme' && mod.modType !== 'special_patch' && !builtInIds.has(mod.id));
+    return [...SPECIAL_PATCH_CATALOG, ...local];
+  }
+
+  getAvailableMod(id) {
+    return SPECIAL_PATCH_CATALOG.find((mod) => mod.id === id) || this.library.get(id);
+  }
+
+  snapshot() {
     const installed = { ...this.storage.state.installedMods };
     for (const [id, record] of Object.entries(installed)) {
       if (record?.modType === 'special_patch') {
@@ -152,24 +152,18 @@ class AppService {
         if (runtime.status === 'updating') installed[id] = { ...record, specialPatchState: runtime.status, requiresPatchUpdate: true };
       }
     }
-    return { ...catalog, installed, packMembership: this.getPackMembership(), favorites: this.storage.state.favorites, settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId(), discordAppId: DISCORD_APP_ID }, themes: this.themeManager.getThemes(), authorThemes: this.catalog.themes || [], themeTokens: [...SEMANTIC_THEME_TOKENS], themeTemplate: this.themeManager.getThemeTemplate(), gamePath: this.gamePath, authors: this.getAuthors(), discordAppId: DISCORD_APP_ID, appVersion: this.appVersion || null };
+    return { mods: this.getAvailableMods(), installed, packMembership: this.getPackMembership(), favorites: this.storage.state.favorites, settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId(), discordAppId: DISCORD_APP_ID }, themes: this.themeManager.getThemes(), themeTokens: [...SEMANTIC_THEME_TOKENS], themeTemplate: this.themeManager.getThemeTemplate(), gamePath: this.gamePath, authors: this.getAuthors(), r2: this.r2.getStatus(), appVersion: this.appVersion || null };
   }
 
   getAuthors() {
     const authors = new Map();
-    const authorEntries = [...this.catalog.mods, ...(this.catalog.themes || []).map((theme) => ({ ...theme, id: theme.id }))];
+    const authorEntries = this.getAvailableMods();
     for (const mod of authorEntries) {
       const rawName = mod.author || 'Unknown author';
-      if (!rawName || /^anonymous$/i.test(rawName) || HIDDEN_AUTHORS.test(String(rawName).trim())) continue;
-      const name = /^anonymous$/i.test(rawName) ? 'Community' : rawName;
-      const profile = this.catalog.authors.find((item) => String(item.nick || item.displayName || '').toLowerCase() === name.toLowerCase()) || {};
-      const avatarSeed = encodeURIComponent(name.toLowerCase());
-      const avatarKey = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const avatarUrl = AUTHOR_AVATARS[avatarKey] || profile.photo || profile.avatarUrl || `https://api.dicebear.com/9.x/initials/svg?seed=${avatarSeed}`;
+      if (!rawName || /^anonymous$/i.test(rawName) || /^unknown(?: author)?$/i.test(String(rawName).trim())) continue;
+      const name = rawName;
       const authorKey = name.toLowerCase().trim();
-      const keepAuthorLink = /^dota2pornfx$/i.test(name);
-      const websiteUrl = (profile.website || profile.authorLink || '').toString().trim();
-      const entry = authors.get(authorKey) || { id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, count: 0, mods: [], avatarUrl, authorLink: keepAuthorLink ? (websiteUrl || null) : null, links: profile.links || {}, bio: profile.bio || '' };
+      const entry = authors.get(authorKey) || { id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, count: 0, mods: [], avatarUrl: null, links: {}, bio: '' };
       entry.count += 1;
       entry.mods.push(mod.id);
       authors.set(authorKey, entry);
@@ -177,36 +171,41 @@ class AppService {
     return [...authors.values()].sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
   }
 
-  async getCatalog({ query = '', category = 'all', section = 'all', author = '', hero = '', favoriteOnly = false, installedOnly = false, updatesOnly = false } = {}) {
-    await this.specialPatches.refreshStates();
-    const mods = searchMods(this.catalog.mods, query, { category }).filter((mod) => {
-      if (section !== 'all' && !(SECTION_CATEGORIES[section] || []).includes(mod.categoryId)) return false;
-      if (author && mod.author.toLowerCase() !== author.toLowerCase()) return false;
-      if (hero && mod.hero !== hero) return false;
-      const installed = this.storage.state.installedMods[mod.id];
-      if (favoriteOnly && !this.storage.state.favorites.includes(mod.id)) return false;
-      if (installedOnly && !installed) return false;
-      if (updatesOnly && (!installed || (mod.modType === 'special_patch' ? !installed.requiresPatchUpdate && installed.currentVersion === mod.currentVersion : installed.version === mod.version))) return false;
-      return true;
-    });
-    const categories = section === 'all' ? this.catalog.getCategories() : (SECTION_CATEGORIES[section] || []).filter((id) => this.catalog.mods.some((mod) => mod.categoryId === id));
-    return { ...this.snapshot(), mods, categories, section, sections: SECTION_CATEGORIES };
-  }
-
-  async refreshCatalog() {
-    const catalog = await this.catalog.load({ force: true });
-    await this.themeManager.setCatalogThemes(catalog.themes);
-    const activeThemeId = this.storage.state.settings.activeThemeId || this.themeManager.getActiveThemeId();
-    await this.themeManager.setActiveTheme(activeThemeId, { persist: true });
-    if (this.storage.state.settings.activeThemeId !== this.themeManager.getActiveThemeId()) await this.storage.patch({ settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId() } });
-    return this.snapshot(catalog);
-  }
   async toggleFavorite(id) { const set = new Set(this.storage.state.favorites); set.has(id) ? set.delete(id) : set.add(id); await this.storage.patch({ favorites: [...set] }); return this.snapshot(); }
-  async setGamePath(gamePath) { const resolvedGamePath = await resolveDotaGamePath(gamePath); if (!resolvedGamePath) throw new Error('Could not find dota/pak01_dir.vpk in the selected folder or its standard Steam Dota subfolders. Select Dota 2\game or use Auto detect.'); const previousPath = this.gamePath; this.gamePath = resolvedGamePath; try { await this.mods.moveInstalledMods(this.storage.state.settings.langSuffix || 'russian'); } catch (error) { this.gamePath = previousPath; throw error; } await this.storage.patch({ settings: { ...this.storage.state.settings, gamePath: resolvedGamePath } }); await this.specialPatches.refreshStates(); return this.snapshot(); }
+  async setGamePath(gamePath) {
+    const resolvedGamePath = await resolveDotaGamePath(gamePath);
+    if (!resolvedGamePath) throw new Error('Could not find dota/pak01_dir.vpk in the selected folder or its standard Steam Dota subfolders. Select Dota 2\\game or use Auto detect.');
+    const previousPath = this.gamePath;
+    this.gamePath = resolvedGamePath;
+    try { await this.mods.moveInstalledMods(this.storage.state.settings.langSuffix || 'russian'); }
+    catch (error) { this.gamePath = previousPath; throw error; }
+    await this.storage.patch({ settings: { ...this.storage.state.settings, gamePath: resolvedGamePath } });
+    await this.specialPatches.refreshStates();
+    await this.getCosmeticListing();
+    return this.snapshot();
+  }
   async detectGame() { const found = await detectDota(); if (found) await this.setGamePath(found.gamePath); return this.snapshot(); }
-  async install(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); if (mod.modType === 'theme') { const archive = await this.downloads.download(mod.id, mod.downloadUrl, { name: mod.name, operation: 'theme-install' }); this.onProgress({ id, name: mod.name, operation: 'theme-install', state: 'processing', phase: 'Importing theme', percent: null }); const imported = await this.themeManager.importTheme(archive); await this.setTheme(imported.id); await this.storage.patch({ installedMods: { ...this.storage.state.installedMods, [id]: { id, modId: id, modType: 'theme', type: 'theme', name: mod.name, displayName: mod.name, author: mod.author, version: mod.version, installedAt: new Date().toISOString() } } }); this.onProgress({ id, name: mod.name, operation: 'theme-install', state: 'completed', phase: 'Theme installed', percent: 100 }); } else if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.install(mod); else await this.mods.install(mod); return this.snapshot(); }
-  async update(id) { const mod = this.catalog.getMod(id); if (!mod) throw new Error('Mod is not in the catalog'); if (mod.modType === 'theme') return this.install(id); if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.update(mod); else await this.mods.update(mod); return this.snapshot(); }
-  async uninstall(id) { const mod = this.catalog.getMod(id); if (mod?.modType === 'theme') await this.removeTheme(id); else if (this.storage.state.installedMods[id]?.modType === 'special_patch') await this.specialPatches.remove(id); else await this.mods.uninstall(id); return this.snapshot(); }
+  async install(id) {
+    const mod = this.getAvailableMod(id);
+    if (!mod) throw new Error('This ID is not a bundled patch or local VantaMods entry. Import a VPK or configure a package source first.');
+    if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.install(mod);
+    else if (this.storage.state.installedMods[id]) await this.installer.setEnabled(id, true);
+    else throw new Error('Only locally imported or verified packages can be installed.');
+    return this.getLibrary();
+  }
+  async update(id) {
+    const mod = this.getAvailableMod(id);
+    if (this.specialPatches.isSpecialPatch(mod)) await this.specialPatches.update(mod);
+    else await this.installer.update(id);
+    return this.getLibrary();
+  }
+  async uninstall(id) {
+    const record = this.storage.state.installedMods[id];
+    if (record?.modType === 'theme' || record?.type === 'theme') await this.removeTheme(id);
+    else if (record?.modType === 'special_patch') await this.specialPatches.remove(id);
+    else await this.installer.uninstall(id);
+    return this.getLibrary();
+  }
   async setModEnabled(id, enabled) { if (this.storage.state.installedMods[id]?.modType === 'special_patch') throw new Error('Special patches cannot be toggled like VPK mods. Remove the patch from the Library instead.'); await this.mods.setEnabled(id, enabled); return this.snapshot(); }
   async mergeMods(ids, name) { await this.mods.merge(ids, name); return this.getLibrary(); }
   async reorderLibrary(ids) { await this.mods.reorder(ids); return this.snapshot(); }
@@ -220,7 +219,187 @@ class AppService {
   async disableHeroGrid() { return this.heroGrids.disable(); }
   async removeHeroGridUserGrids() { return this.heroGrids.removeUserGrids(); }
   async removeHeroGridUserGrid(index) { return this.heroGrids.removeUserGrid(index); }
-  async importVpk(filePath, displayName) { await this.mods.importVpk(filePath, displayName); return this.getLibrary(); }
+  async getCosmeticListing({ forceRefresh = false } = {}) {
+    if (!this.gamePath) return { heroes: [], error: 'Configure the Dota 2 path first.' };
+    const pakPath = path.join(this.gamePath, 'dota', 'pak01_dir.vpk');
+    let stat;
+    try { stat = await fs.stat(pakPath); }
+    catch (error) { return { heroes: [], error: `Could not read the local Dota VPK: ${error.message}` }; }
+    const language = normalizeLanguageSuffix(this.storage.state.settings.langSuffix || 'english', 'english');
+    const signature = `${path.resolve(this.gamePath)}|${stat.size}|${stat.mtimeMs}|cosmetics-v9|${language}|${this.appVersion || 'dev'}`;
+    if (!forceRefresh && this.cosmeticListingCache?.signature === signature) return this.cosmeticListingCache.listing;
+    if (!forceRefresh) {
+      try {
+        const cached = JSON.parse(await fs.readFile(this.cosmeticListingCacheFile, 'utf8'));
+        if (cached.signature === signature && Array.isArray(cached.listing?.heroes)) {
+          this.cosmeticListingCache = { signature, listing: cached.listing };
+          return cached.listing;
+        }
+      } catch {}
+    }
+    const listing = this.buildCosmeticListing(this.gamePath, {}, language);
+    this.cosmeticListingCache = { signature, listing };
+    try {
+      await fs.mkdir(path.dirname(this.cosmeticListingCacheFile), { recursive: true });
+      const temporary = `${this.cosmeticListingCacheFile}.${process.pid}.tmp`;
+      await fs.writeFile(temporary, JSON.stringify({ signature, listing }));
+      await fs.rename(temporary, this.cosmeticListingCacheFile);
+    } catch (error) { console.warn(`[cosmetics] Could not persist generated hero list: ${error.message}`); }
+    return listing;
+  }
+
+  async getCosmetics() {
+    const listing = await this.getCosmeticListing();
+    const { selections: picks, discarded } = sanitizeCosmeticSelections(listing.heroes, this.storage.state.settings.cosmeticLoadout || {});
+    const manifest = await this.specialPatches.readSpecialManifest().catch(() => null);
+    return {
+      ...listing,
+      picks,
+      discardedPicks: discarded,
+      loaderInstalled: Boolean(manifest && this.gamePath && path.resolve(manifest.gamePath) === path.resolve(this.gamePath)),
+      generatedModInstalled: Boolean(this.storage.state.installedMods?.['vanta-generated-cosmetics']),
+    };
+  }
+  async applyCosmetics(picks) {
+    const listing = await this.getCosmeticListing({ forceRefresh: true });
+    if (listing.error && Object.keys(picks || {}).length) throw new Error(listing.error);
+    const sanitized = sanitizeCosmeticSelections(listing.heroes, picks);
+    const stored = sanitizeCosmeticSelections(listing.heroes, this.storage.state.settings.cosmeticLoadout || {});
+    const discardedPicks = Object.keys(picks || {}).length
+      ? [...stored.discarded, ...sanitized.discarded]
+      : sanitized.discarded;
+    const operation = await this.specialPatches.applyCosmetics(sanitized.selections);
+    return { ...(await this.getCosmetics()), operation, discardedPicks };
+  }
+  getCosmeticPresets() {
+    const presets = this.storage.state.settings.skinLoadoutPresets;
+    return Array.isArray(presets) ? presets.filter((preset) => preset && typeof preset === 'object' && preset.id && preset.name && preset.picks && typeof preset.picks === 'object') : [];
+  }
+  async saveCosmeticPreset(name) {
+    const safeName = String(name || '').trim().replace(/[\u0000-\u001f]/g, '').slice(0, 60);
+    if (!safeName) throw new Error('Skin set name is required.');
+    const presets = this.getCosmeticPresets();
+    if (presets.some((preset) => preset.name.toLocaleLowerCase() === safeName.toLocaleLowerCase())) throw new Error('A skin set with this name already exists.');
+    const listing = await this.getCosmeticListing();
+    if (listing.error) throw new Error(listing.error);
+    const { selections, discarded } = sanitizeCosmeticSelections(listing.heroes, this.storage.state.settings.cosmeticLoadout || {});
+    if (!Object.keys(selections).length) throw new Error('Choose and apply at least one skin before saving a set.');
+    const preset = { id: crypto.randomUUID(), name: safeName, picks: selections, skinCount: Object.keys(selections).length, createdAt: new Date().toISOString() };
+    await this.storage.patch({ settings: { ...this.storage.state.settings, skinLoadoutPresets: [...presets, preset] } });
+    return { presets: this.getCosmeticPresets(), discardedPicks: discarded };
+  }
+  async applyCosmeticPreset(id) {
+    const preset = this.getCosmeticPresets().find((item) => item.id === id);
+    if (!preset) throw new Error('Saved skin set was not found.');
+    return this.applyCosmetics(preset.picks);
+  }
+  async deleteCosmeticPreset(id) {
+    const presets = this.getCosmeticPresets();
+    if (!presets.some((preset) => preset.id === id)) throw new Error('Saved skin set was not found.');
+    const next = presets.filter((preset) => preset.id !== id);
+    await this.storage.patch({ settings: { ...this.storage.state.settings, skinLoadoutPresets: next } });
+    return { presets: next };
+  }
+  async removeCosmeticPresetPick(id, slotId) {
+    const presets = this.getCosmeticPresets();
+    const preset = presets.find((item) => item.id === id);
+    if (!preset) throw new Error('Saved skin set was not found.');
+    const safeSlotId = String(slotId || '');
+    if (!safeSlotId.startsWith('item:') || !Object.hasOwn(preset.picks, safeSlotId)) throw new Error('The selected skin is not in this saved set.');
+    const nextPicks = { ...preset.picks };
+    delete nextPicks[safeSlotId];
+    const updatedPresets = presets.map((item) => item.id === id
+      ? { ...item, picks: nextPicks, skinCount: Object.keys(nextPicks).length, updatedAt: new Date().toISOString() }
+      : item);
+    await this.storage.patch({ settings: { ...this.storage.state.settings, skinLoadoutPresets: updatedPresets } });
+    return { presets: this.getCosmeticPresets(), preset: this.getCosmeticPresets().find((item) => item.id === id) };
+  }
+  async reinstallLibraryMods() {
+    if (this.reinstallPromise) throw new Error('A library reinstall is already running.');
+    this.reinstallPromise = this.performLibraryReinstall();
+    try { return await this.reinstallPromise; }
+    finally { this.reinstallPromise = null; }
+  }
+  async performLibraryReinstall() {
+    if (!this.gamePath) throw new Error('Dota 2 installation is not configured.');
+    await this.mods.assertGameClosed();
+    const installed = Object.entries(this.storage.state.installedMods || {}).map(([key, record]) => ({ ...record, id: record?.id || record?.modId || key }));
+    const records = installed.filter((record) => record?.fileName
+      && record.modType !== 'special_patch' && record.modType !== 'theme' && record.type !== 'theme'
+      && record.id !== 'vanta-generated-cosmetics' && record.modId !== 'vanta-generated-cosmetics');
+    const specialPatches = installed.filter((record) => record?.modType === 'special_patch' || record.id === 'vanta-generated-cosmetics');
+    const heroKey = (record) => normalizeHeroKey(record.hero || record.heroLabel || '') || 'other';
+    records.sort((left, right) => heroKey(left).localeCompare(heroKey(right))
+      || String(left.displayName || left.name || left.id).localeCompare(String(right.displayName || right.name || right.id)));
+    const tasks = [
+      ...records.map((record) => ({ record, kind: 'vpk' })),
+    ];
+    const hasSavedCosmetics = Object.keys(this.storage.state.settings.cosmeticLoadout || {}).length > 0;
+    if (specialPatches.length || hasSavedCosmetics) {
+      tasks.push({
+        kind: 'special-refresh',
+        record: { id: 'special-patches', name: 'Generated hero cosmetics and Dota patches' },
+        members: specialPatches.length ? specialPatches : [{ id: 'vanta-generated-cosmetics', name: 'Generated Hero Cosmetics' }],
+      });
+    }
+    const currentBuildId = await this.specialPatches.currentBuildId(this.gamePath).catch(() => null);
+    const results = [];
+    const operationTotal = tasks.length;
+    const emit = (record, index, state, error = null) => this.onProgress({
+      id: 'library-reinstall', name: 'Reinstall mods', operation: 'library-reinstall', state,
+      phase: record ? `${heroKey(record)} · ${record.displayName || record.name || record.id} (${index + 1}/${operationTotal})` : 'Reinstall complete',
+      percent: operationTotal ? Math.round((index / operationTotal) * 100) : 100,
+      error: error?.message || null,
+    });
+    if (!operationTotal) {
+      emit(null, 0, 'completed');
+      return { ...(await this.getLibrary()), reinstall: { total: 0, succeeded: 0, failed: 0, results } };
+    }
+    for (let index = 0; index < tasks.length; index += 1) {
+      const task = tasks[index];
+      const { record, kind } = task;
+      emit(record, index, 'processing');
+      try {
+        await new Promise((resolve) => setImmediate(resolve));
+        let status;
+        if (kind === 'vpk') {
+          const packagePath = path.join(this.mods.library.directory, path.basename(record.fileName));
+          const installedRecord = await this.mods.installFromPackage(
+            { ...record, id: this.recordId(record), name: record.displayName || record.name || record.id },
+            packagePath,
+            { source: record.source || 'library-reinstall', sourcePackage: record.sourcePackage || null },
+          );
+          status = installedRecord.installState || 'reinstalled';
+        } else if (kind === 'special-refresh') {
+          const unavailable = task.members.filter((member) => member.id !== 'vanta-generated-cosmetics'
+            && !this.specialPatches.isSpecialPatch(this.getAvailableMod(member.id)));
+          if (unavailable.length) throw new Error(`Installed Dota patch is no longer available in the current VANTA catalog: ${unavailable.map((member) => member.displayName || member.name || member.id).join(', ')}`);
+          const picks = this.storage.state.settings.cosmeticLoadout || {};
+          const cosmetics = await this.applyCosmetics(picks);
+          const hasPicks = Object.keys(cosmetics.picks || {}).length > 0;
+          const hasGeneratedRecord = task.members.some((member) => member.id === 'vanta-generated-cosmetics');
+          const members = [...task.members];
+          if (hasPicks && !hasGeneratedRecord) members.push({ id: 'vanta-generated-cosmetics', name: 'Generated Hero Cosmetics' });
+          for (const member of members) {
+            const memberStatus = member.id === 'vanta-generated-cosmetics' && !hasPicks ? 'cleared-empty-cosmetics' : 'reinstalled';
+            results.push({ id: this.recordId(member), name: member.displayName || member.name || member.id, hero: heroKey(member), status: memberStatus, gameBuildId: currentBuildId });
+          }
+          status = 'reinstalled';
+        }
+        if (kind !== 'special-refresh') results.push({ id: this.recordId(record), name: record.displayName || record.name || record.id, hero: heroKey(record), status, gameBuildId: currentBuildId });
+      } catch (error) {
+        const failedRecords = kind === 'special-refresh' ? task.members : [record];
+        for (const failedRecord of failedRecords) results.push({ id: this.recordId(failedRecord), name: failedRecord.displayName || failedRecord.name || failedRecord.id, hero: heroKey(failedRecord), status: 'failed', gameBuildId: currentBuildId, error: error.message });
+      }
+      emit(record, index + 1, 'processing');
+    }
+    const total = results.length;
+    const succeeded = results.filter((result) => result.status !== 'failed').length;
+    const failed = results.length - succeeded;
+    this.onProgress({ id: 'library-reinstall', name: 'Reinstall mods', operation: 'library-reinstall', state: failed ? 'failed' : 'completed', phase: 'Reinstall complete', percent: 100, error: failed ? `${failed} mod(s) could not be reinstalled.` : null });
+    return { ...(await this.getLibrary()), reinstall: { total, succeeded, failed, results } };
+  }
+  async importVpk(filePath, displayName, metadata = {}) { await this.library.importVpk(filePath, { ...metadata, name: displayName || metadata.name || path.basename(filePath, path.extname(filePath)) }); return this.getLibrary(); }
   async getLegacyOwnedFiles(languageFolder) {
     if (!this.gamePath) return [];
     const fs = require('fs/promises');
@@ -294,7 +473,10 @@ class AppService {
       const candidates = [base, base.replace(/\.(?:off|moff)$/i, ''), `${base}.off`, `${base}.moff`];
       let present = false;
       for (const candidate of candidates) { try { await fs.access(candidate); present = true; break; } catch {} }
-      if (!present && record.source === 'legacy' || !present && record.source === 'saved-pack') { delete installedMods[id]; changed = true; }
+      if (!present && (record.source === 'legacy' || record.source === 'saved-pack')) {
+        const librarySource = path.join(this.mods.library.directory, path.basename(String(record.fileName || '')));
+        if (!await this.exists(librarySource)) { delete installedMods[id]; changed = true; }
+      }
     }
     for (const candidate of candidates) {
       const deployedFileName = candidate.file.replace(/\.(?:off|moff)$/i, '');
@@ -337,10 +519,53 @@ class AppService {
       return targetRoot ? recordedNames.map((file) => path.join(targetRoot, file)) : [];
     });
     const legacyFiles = await this.getLegacyOwnedFiles(languageFolder);
-    return { ...this.snapshot(), installed, external: await detectExternalFiles(this.gamePath, this.catalog.mods, languageFolder, ownedFiles, legacyFiles) };
+    const mods = this.getAvailableMods();
+    const cosmetics = await this.getCosmetics();
+    return { ...this.snapshot(), installed, external: await detectExternalFiles(this.gamePath, mods, languageFolder, ownedFiles, legacyFiles), diagnostics: this.dotaDiagnostics.lastResult, cosmetics };
+  }
+  async listMods({ query = '', category = 'all', hero = null, installedOnly = false, favoriteOnly = false } = {}) {
+    const library = await this.getLibrary();
+    const installedIds = new Set((Array.isArray(library.installed)
+      ? library.installed
+      : Object.entries(library.installed || {}).map(([id, record]) => ({ ...record, id: record?.id || record?.modId || id })))
+      .map((record) => record?.id || record?.modId)
+      .filter(Boolean)
+      .map(String));
+    const mods = searchMods(this.getAvailableMods(), query, { category, hero }).filter((mod) => {
+      if (installedOnly && !installedIds.has(String(mod.id))) return false;
+      if (favoriteOnly && !this.storage.state.favorites.includes(mod.id)) return false;
+      return true;
+    });
+    return { ...library, mods, categories: [...new Set(mods.map((mod) => mod.categoryId))].sort() };
+  }
+  async diagnoseDota() {
+    const diagnostics = await this.dotaDiagnostics.check();
+    return { ...this.snapshot(), diagnostics };
+  }
+  async getR2Catalog() {
+    this.r2.indexUrl = String(this.storage.state.settings.r2IndexUrl || '').trim();
+    const result = await this.r2.list();
+    return { ...this.snapshot(), remotePackages: result.mods, r2: { ...this.r2.getStatus(), available: true } };
+  }
+  async installR2Mod(id, version = null) {
+    this.r2.indexUrl = String(this.storage.state.settings.r2IndexUrl || '').trim();
+    const { mod, release } = await this.r2.getRelease(id, version);
+    const archive = await this.downloads.download(id, release.url, { name: mod.name, operation: 'mod-install' });
+    let verified;
+    try {
+      verified = await this.r2.verifyPackage(archive, release);
+    } catch (error) {
+      await this.downloads.discardCachedArchive(id, release.url).catch(() => {});
+      throw error;
+    }
+    await this.installer.installPackage({ ...mod, version: release.version }, archive, {
+      source: 'r2',
+      sourcePackage: { kind: 'r2', url: release.url, version: release.version, releaseSha256: verified.sha256, packageSize: verified.size },
+    });
+    return this.getLibrary();
   }
   async getLanguageFolders() { if (!this.gamePath) return []; const entries = await fs.readdir(this.gamePath, { withFileTypes: true }); const folders = entries.filter((entry) => entry.isDirectory() && /^dota_/i.test(entry.name)).map((entry) => normalizeLanguageSuffix(entry.name, '')).filter(Boolean); const selected = normalizeLanguageSuffix(this.storage.state.settings.langSuffix); return [...new Set([...folders, selected])].sort(); }
-  async openModsFolder() { if (!this.gamePath) throw new Error('Dota 2 installation is not configured'); const folder = this.mods.getLanguageRoot(normalizeLanguageSuffix(this.storage.state.settings.langSuffix)); await fs.mkdir(folder, { recursive: true }); const { spawn } = require('child_process'); const command = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open'; const child = spawn(command, [folder], { detached: true, stdio: 'ignore' }); child.on('error', async () => { try { const { shell } = require('electron'); await shell.openPath(folder); } catch {} }); child.unref(); return folder; }
+  async openModsFolder() { const folder = this.library.directory; await fs.mkdir(folder, { recursive: true }); const electronApi = (() => { try { return require('electron'); } catch { return null; } })(); if (electronApi?.shell?.openPath) { await electronApi.shell.openPath(path.dirname(folder)); return folder; } const { spawn } = require('child_process'); const command = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open'; const child = spawn(command, [folder], { detached: true, stdio: 'ignore' }); child.unref(); return folder; }
   async setExternalEnabled(relativePath, enabled) {
     if (!this.gamePath) throw new Error('Dota 2 installation is not configured');
     const active = await resolveGameRelativePath(this.gamePath, relativePath);
@@ -576,7 +801,7 @@ class AppService {
   async getDownloadArchives() {
     const archives = await this.downloads.listArchives();
     return { ...this.snapshot(), archives: archives.map((archive) => {
-      const mod = this.catalog.getMod(archive.id);
+      const mod = this.getAvailableMod(archive.id);
       return { ...archive, name: mod?.name || archive.id, categoryId: mod?.categoryId || 'other', heroLabel: mod?.heroLabel || null, slot: mod?.slot || null, author: mod?.author || null, previewUrl: mod?.previewUrl || null, available: Boolean(mod), installed: Boolean(this.storage.state.installedMods[archive.id]) };
     }) };
   }
@@ -587,9 +812,17 @@ class AppService {
     if (!uniqueIds.length) throw new Error('Select at least one archive');
     const results = [];
     for (const id of uniqueIds) {
-      const mod = this.catalog.getMod(id);
-      if (!mod) { results.push({ id, ok: false, error: 'Mod is no longer in the catalog' }); continue; }
-      try { await this.install(id); results.push({ id, ok: true }); }
+      const mod = this.getAvailableMod(id);
+      let archive = null;
+      for (const directory of this.downloads.archiveRoots) {
+        const candidate = path.join(directory, `${id}.zip`);
+        if (await this.exists(candidate)) { archive = candidate; break; }
+      }
+      if (!archive) { results.push({ id, ok: false, error: 'The downloaded package is not available locally.' }); continue; }
+      try {
+        await this.installer.importVpk(archive, { id: mod?.id, name: mod?.name || id, author: mod?.author || null, categoryId: mod?.categoryId || 'other', version: mod?.version || 'imported' });
+        results.push({ id, ok: true });
+      }
       catch (error) { results.push({ id, ok: false, error: error.message }); }
     }
     return { ...this.snapshot(), results };
@@ -598,12 +831,7 @@ class AppService {
   async getThemes() { return { ...this.snapshot(), themes: this.themeManager.getThemes(), activeThemeId: this.themeManager.getActiveThemeId() }; }
   searchThemes(query, themes = this.themeManager.getThemes()) { return this.themeManager.searchThemes(query, themes); }
   async setTheme(themeId) {
-    let theme = this.themeManager.getTheme(themeId);
-    if (theme.source === 'catalog' && theme.downloadUrl && !this.themeManager.themes.has(theme.id)) {
-      const archive = await this.downloads.download(theme.id, theme.downloadUrl);
-      theme = await this.themeManager.importTheme(archive);
-      await this.storage.patch({ installedMods: { ...this.storage.state.installedMods, [theme.id]: { id: theme.id, modId: theme.id, modType: 'theme', type: 'theme', name: theme.name, displayName: theme.name, author: theme.author, version: theme.version, installedAt: new Date().toISOString() } } });
-    }
+    const theme = this.themeManager.getTheme(themeId);
     await this.themeManager.setActiveTheme(theme.id, { persist: true });
     await this.storage.patch({ settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId() } });
     return { ...this.snapshot(), theme: theme || this.themeManager.getActiveTheme() };
@@ -616,7 +844,6 @@ class AppService {
     const activeId = this.themeManager.getActiveThemeId();
     const removedTheme = this.themeManager.getTheme(themeId);
     await this.themeManager.removeTheme(themeId);
-    await this.themeManager.setCatalogThemes(this.catalog.themes || []);
     const installedMods = { ...this.storage.state.installedMods };
     delete installedMods[themeId];
     await this.storage.patch({ settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId() }, installedMods });
@@ -633,6 +860,15 @@ class AppService {
   async setSetting(key, value) {
     if (key === 'langSuffix') value = normalizeLanguageSuffix(value);
     if (key === 'langSuffix' && value !== this.storage.state.settings.langSuffix) await this.mods.moveInstalledMods(value);
+    if (key === 'r2IndexUrl') {
+      value = String(value || '').trim();
+      if (value) {
+        let parsed;
+        try { parsed = new URL(value); } catch { throw new Error('R2 index URL is invalid.'); }
+        if (parsed.protocol !== 'https:') throw new Error('R2 index URL must use HTTPS.');
+      }
+      this.r2.indexUrl = value;
+    }
     if (key === 'activeThemeId') {
       await this.themeManager.setActiveTheme(value, { persist: true });
       await this.storage.patch({ settings: { ...this.storage.state.settings, activeThemeId: this.themeManager.getActiveThemeId() } });

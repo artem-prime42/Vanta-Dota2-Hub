@@ -1,12 +1,13 @@
 const path = require('path');
 const fs = require('fs/promises');
-const { app, BrowserWindow, ipcMain, dialog, Menu, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, clipboard, shell } = require('electron');
 const { Client } = require('discord-rpc');
 const { AppService } = require('./services/app-service');
 const { UpdateService } = require('./services/update-service');
 const AdmZip = require('adm-zip');
 const { DiagnosticLogger, buildDiagnosticArchiveFiles } = require('../infrastructure/diagnostics');
 const { collectLinuxDiagnostic } = require('../infrastructure/linux-diagnostics');
+const { launchDota } = require('../application/game-launcher');
 
 const DISCORD_APP_ID = '1551207182744166511';
 
@@ -70,16 +71,44 @@ async function createWindow() {
   ipcMain.handle('window:toggle-maximize', (event) => { const current = BrowserWindow.fromWebContents(event.sender); if (current?.isMaximized()) current.unmaximize(); else current?.maximize(); return current?.isMaximized(); });
   ipcMain.handle('window:toggle-fullscreen', (event) => { const current = BrowserWindow.fromWebContents(event.sender); current?.setFullScreen(!current.isFullScreen()); return current?.isFullScreen(); });
   ipcMain.handle('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
-  register('app:init', async () => { const result = await service.init(); await updateDiscordPresence(); updater.start(); return { ...result, appVersion: app.getVersion() }; });
-  register('catalog:list', async (payload) => { const result = await service.getCatalog(payload); await updateDiscordPresence(); return result; });
-  register('catalog:refresh', () => service.refreshCatalog());
+  register('app:init', async () => { const result = await service.init(); await updateDiscordPresence(); updater.start(); return { ...result, appVersion: app.getVersion(), platform: process.platform }; });
+  register('library:mods', (payload) => service.listMods(payload || {}));
+  register('library:diagnose', () => service.diagnoseDota());
+  register('library:repair', ({ id }) => service.installer.repair(id).then(() => service.getLibrary()));
+  register('library:r2-list', () => service.getR2Catalog());
+  register('library:r2-install', ({ id, version } = {}) => service.installR2Mod(id, version));
   register('favorite:toggle', ({ id }) => service.toggleFavorite(id));
   register('game:detect', () => service.detectGame());
+  register('game:play', async () => {
+    if (process.platform === 'win32') {
+      const russian = service?.storage?.state?.settings?.appLanguage === 'ru';
+      const choice = await dialog.showMessageBox(window, {
+        type: 'warning',
+        title: russian ? 'Запустить Dota 2' : 'Launch Dota 2',
+        message: russian ? 'Перед запуском Dota 2 будет выполнен встроенный FixMatchMaking.bat без рекламных страниц.' : 'The bundled FixMatchMaking.bat will run before Dota 2 starts; it does not open advertising pages.',
+        detail: russian
+          ? 'Скрипт изменяет gameinfo и dota.signatures. Файл загружается по HTTPS и проверяется по SHA-1; если Dota 2 уже запущена, скрипт остановится и не будет закрывать игру.'
+          : 'The script modifies gameinfo and dota.signatures. Its patch is fetched over HTTPS and SHA-1 checked; if Dota 2 is already running, the script stops without closing the game.',
+        buttons: [russian ? 'Продолжить' : 'Continue', russian ? 'Отмена' : 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      });
+      if (choice.response !== 0) return { cancelled: true };
+    }
+    return launchDota({ platform: process.platform, shell, tempDirectory: app.getPath('temp') });
+  });
   register('game:set-path', async () => { const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] }); if (result.canceled) return service.snapshot(); const resultData = await service.setGamePath(result.filePaths[0]); await updateDiscordPresence(); return resultData; });
   register('game:language-folders', () => service.getLanguageFolders());
   register('game:open-mods-folder', () => service.openModsFolder());
   register('mod:install', ({ id }) => service.install(id));
   register('mod:update', ({ id }) => service.update(id));
+  register('mod:repair', ({ id }) => service.installer.repair(id).then(() => service.getLibrary()));
+  register('library:reinstall-mods', () => service.reinstallLibraryMods());
+  register('cosmetics:preset-save', ({ name }) => service.saveCosmeticPreset(name));
+  register('cosmetics:preset-apply', ({ id }) => service.applyCosmeticPreset(id));
+  register('cosmetics:preset-delete', ({ id }) => service.deleteCosmeticPreset(id));
+  register('cosmetics:preset-remove-pick', ({ id, slotId }) => service.removeCosmeticPresetPick(id, slotId));
   register('mod:uninstall', ({ id }) => service.uninstall(id));
   register('mod:set-enabled', ({ id, enabled }) => service.setModEnabled(id, enabled));
   register('mod:merge', ({ ids, name }) => service.mergeMods(ids, name));
@@ -88,7 +117,7 @@ async function createWindow() {
   register('mod:rename', ({ id, name }) => service.renameLibraryItem(id, name));
   register('mod:rebuild-pack', ({ id }) => service.rebuildPack(id));
   register('library:get', () => service.getLibrary());
-  register('library:import', async ({ displayName } = {}) => { const result = await dialog.showOpenDialog(window, { properties: ['openFile'], filters: [{ name: 'VPK files', extensions: ['vpk'] }] }); if (result.canceled) return service.getLibrary(); return service.importVpk(result.filePaths[0], displayName); });
+  register('library:import', async ({ displayName, metadata } = {}) => { const result = await dialog.showOpenDialog(window, { properties: ['openFile'], filters: [{ name: 'VPK or package archives', extensions: ['vpk', 'zip'] }] }); if (result.canceled) return { cancelled: true }; return service.importVpk(result.filePaths[0], displayName, metadata); });
   register('library:save-pack', ({ name, modIds }) => service.savePack(name, modIds));
   register('library:delete-pack', ({ id }) => service.deletePack(id));
   register('saved-packs:list', () => service.listSavedPacks());
@@ -130,6 +159,8 @@ async function createWindow() {
     return { canceled: false, filePath: result.filePath };
   });
   register('diagnostics:renderer-log', ({ level = 'error', message = '', stack = '' } = {}) => diagnosticLogger.write(level, `[renderer] ${message}${stack ? `\n${stack}` : ''}`));
+  register('cosmetics:list', () => service.getCosmetics());
+  register('cosmetics:apply', ({ picks } = {}) => service.applyCosmetics(picks));
   register('hero-grids:list', () => service.getHeroGrids());
   register('hero-grids:diagnose', () => service.diagnoseHeroGrid());
   register('hero-grids:user-grids', () => service.getHeroGridUserGrids());

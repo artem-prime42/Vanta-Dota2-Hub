@@ -223,9 +223,14 @@ input::placeholder, textarea::placeholder { color: var(--theme-muted, var(--mute
 .library-mod > img, .library-thumb-empty { border-radius: var(--theme-radius-small, 5px); background: var(--theme-surface-elevated, var(--panel-2)); }
 .library-thumb-empty { color: var(--theme-accent, var(--accent)); }
 .library-drag-handle .drag-dots i { background: var(--theme-muted, var(--muted)); }
-.library-check span { border-color: var(--theme-border, var(--line)); border-radius: var(--theme-radius-small, 4px); background: var(--theme-input, var(--panel)); }
-.library-check input:checked + span { border-color: var(--theme-accent, var(--accent)); background: var(--theme-accent, var(--accent)); box-shadow: inset 0 0 0 4px var(--theme-surface, var(--panel)); }
-.library-check input:focus-visible + span { outline-color: var(--theme-focus, var(--theme-accent, var(--accent))); }
+#content .library-check { flex: 0 0 24px; width: 24px; height: 24px; }
+#content .library-check input { position: absolute; inset: 0; z-index: 1; width: 24px; height: 24px; margin: 0; opacity: 0; cursor: pointer; }
+#content .library-check span { position: relative; display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid var(--theme-border, var(--line)); border-radius: var(--theme-radius-small, 4px); background: var(--theme-input, var(--panel)); box-shadow: 0 2px 5px var(--theme-shadow-small, rgba(0, 0, 0, .2)); transition: background .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+#content .library-check span::after { width: 5px; height: 9px; border: solid var(--theme-button-ink, var(--accent-ink)); border-width: 0 2px 2px 0; content: ''; opacity: 0; transform: translateY(-1px) rotate(45deg) scale(.7); transition: opacity .14s ease, transform .14s ease; }
+#content .library-check:hover span { border-color: var(--theme-accent, var(--accent)); background: var(--theme-surface-hover, var(--panel-2)); transform: scale(1.06); }
+#content .library-check input:checked + span { border-color: var(--theme-accent, var(--accent)); background: var(--theme-accent, var(--accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent, var(--accent)) 18%, transparent), 0 3px 9px var(--theme-shadow-small, rgba(0, 0, 0, .24)); }
+#content .library-check input:checked + span::after { opacity: 1; transform: translateY(-1px) rotate(45deg) scale(1); }
+#content .library-check input:focus-visible + span { outline: 2px solid var(--theme-focus, var(--theme-accent, var(--accent))); outline-offset: 3px; }
 .library-mod-actions .toggle-button, .external-file-controls .toggle-button { border-color: var(--theme-border, var(--line)); color: var(--theme-muted, var(--muted)); background: var(--theme-surface-elevated, var(--panel-2)); }
 .library-mod-actions .toggle-button::before, .external-file-controls .toggle-button::before { background: var(--theme-muted, var(--muted)); }
 .library-mod-actions .toggle-button.on, .external-file-controls .toggle-button.on { border-color: var(--theme-accent, var(--accent)); color: var(--theme-button-ink, var(--accent-ink)); background: var(--theme-accent, var(--accent)); }
@@ -237,6 +242,9 @@ input::placeholder, textarea::placeholder { color: var(--theme-muted, var(--mute
 .library-sort-select { border-color: var(--theme-border, var(--line)); border-radius: var(--theme-radius-small, 5px); color: var(--theme-text, var(--text)); background: var(--theme-input, var(--panel)); }
 .library-bulk { border-color: var(--theme-border, var(--line)); border-radius: var(--theme-radius-medium, 10px); color: var(--theme-text, var(--text)); background: var(--theme-modal, var(--panel)) !important; box-shadow: 0 18px 55px var(--theme-shadow-large, var(--theme-shadow, #000b)); backdrop-filter: blur(var(--theme-blur-surface, 0px)); }
 .library-bulk.has-selection { border-color: color-mix(in srgb, var(--theme-accent, var(--accent)) 45%, var(--theme-border, var(--line))); }
+.skin-preset-row { border-color: var(--theme-border, var(--line)); border-radius: var(--theme-radius-small, 7px); background: color-mix(in srgb, var(--theme-surface, var(--panel)) 78%, transparent); }
+.skin-preset-row strong { color: var(--theme-text, var(--text)); }
+.skin-preset-row small, .skin-preset-empty { color: var(--theme-muted, var(--muted)); }
 .floating-selection-count { color: var(--theme-text, var(--text)); }
 .floating-selection-cancel { border-color: var(--theme-border, var(--line)); color: var(--theme-muted, var(--muted)); background: var(--theme-surface-elevated, var(--panel-2)); }
 .external-files-section { border-color: var(--theme-border, var(--line)); }

@@ -15,22 +15,13 @@ function addRequestedSettings() {
   panel.appendChild(socials);
 }
 
-function addModsFolderButton() {
-  const host = document.querySelector('.sidebar-bottom');
-  if (!host || host.querySelector('#open-mods-folder')) return;
-  const button = document.createElement('button');
-  button.id = 'open-mods-folder';
-  button.className = 'nav-item folder-nav-item';
-  button.innerHTML = `<span>▱</span>${requestedText('Папка модов', 'Mods folder')}`;
-  button.onclick = async () => { try { await call('game:open-mods-folder'); } catch (error) { toast(error.message); } };
-  host.prepend(button);
-}
-
 function addInstalledFileNames() {
   document.querySelectorAll('.library-mod:not(.external-file)').forEach((row) => {
     if (row.querySelector('.installed-file-name')) return;
     const id = row.querySelector('[data-library-select]')?.dataset.librarySelect;
-    const record = id && (Array.isArray(state.data.installed) ? state.data.installed.find((item) => item.modId === id) : state.data.installed?.[id]);
+    const record = id && (Array.isArray(state.data.installed)
+      ? state.data.installed.find((item) => String(item.id || item.modId) === String(id))
+      : state.data.installed?.[id] || Object.values(state.data.installed || {}).find((item) => String(item?.id || item?.modId) === String(id)));
     const fileName = record?.installedFiles?.[0];
     if (!fileName) return;
     const info = row.querySelector('.library-mod-info');
@@ -65,26 +56,17 @@ function arrangeModCardActions() {
 function orderHeroSlots() {
   const tabs = document.querySelector('.slot-tabs');
   if (!tabs || tabs.dataset.ordered) return;
-  const buttons = [...tabs.querySelectorAll('[data-slot]')];
+  const buttons = [...tabs.querySelectorAll('[data-slot]')].filter((button) => button.dataset.slot !== 'set');
+  tabs.querySelectorAll('[data-slot="set"]').forEach((button) => button.remove());
   const all = buttons.find((button) => button.dataset.slot === 'all');
-  let set = buttons.find((button) => /set|набор/i.test(button.dataset.slot || button.textContent));
   if (!all) return;
-  if (!set) {
-    set = document.createElement('button');
-    set.className = 'filter';
-    set.dataset.slot = 'set';
-    set.onclick = () => { state.heroSlot = 'set'; renderHeroDetail(); };
-    tabs.appendChild(set);
-  }
   tabs.dataset.ordered = '1';
   all.textContent = requestedText('Все слоты', 'All slots');
-  set.textContent = requestedText('Набор', 'Set');
-  [all, set, ...buttons.filter((button) => button !== all && button !== set)].forEach((button) => tabs.appendChild(button));
+  [all, ...buttons.filter((button) => button !== all)].forEach((button) => tabs.appendChild(button));
 }
 
 const requestedUiObserver = new MutationObserver(() => {
   addRequestedSettings();
-  addModsFolderButton();
   addInstalledFileNames();
   removeAuthorPlaceholder();
   arrangeModCardActions();
@@ -92,4 +74,3 @@ const requestedUiObserver = new MutationObserver(() => {
 });
 requestedUiObserver.observe(document.body, { childList: true, subtree: true });
 addRequestedSettings();
-addModsFolderButton();

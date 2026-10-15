@@ -7,10 +7,13 @@ const HERO_ATTRIBUTE_MAP = {
   universal: new Set('abaddon arc_warden bane beastmaster batrider brewmaster dazzle death_prophet enigma io magnus marci nature_prophet nyx_assassin pangolier sand_king snapfire techies venomancer visage void_spirit windranger'.split(' ')),
 };
 
-function heroDirectoryLabel(id) { return id.split('_').map((part) => part ? part[0].toUpperCase() + part.slice(1) : part).join(' '); }
+function heroDirectoryLabel(id) {
+  return id === 'anti_mage' ? 'Anti-Mage' : id.split('_').map((part) => part ? part[0].toUpperCase() + part.slice(1) : part).join(' ');
+}
 function normalizeHeroId(value) {
-  const raw = String(value ?? '').trim().toLowerCase();
+  let raw = String(value ?? '').trim().toLowerCase();
   if (!raw) return '';
+  raw = raw.replace(/^npc_dota_hero_/, '');
   const aliases = {
     'anti mage': 'anti_mage', 'anti-mage': 'anti_mage', antimage: 'anti_mage',
     'nature prophet': 'nature_prophet', "nature's prophet": 'nature_prophet', 'natures prophet': 'nature_prophet', furion: 'nature_prophet',
@@ -19,95 +22,111 @@ function normalizeHeroId(value) {
     'shadow fiend': 'shadow_fiend', 'shadow-fiend': 'shadow_fiend', nevermore: 'shadow_fiend',
     'treant protector': 'treant_protector', 'treant-protector': 'treant_protector',
     'vengeful spirit': 'vengeful_spirit', 'vengeful-spirit': 'vengeful_spirit', vengefulspirit: 'vengeful_spirit',
-    windrunner: 'windranger', 'rattletrap': 'clockwerk', wisp: 'io', 'life stealer': 'lifestealer', 'life-stealer': 'lifestealer', magnataur: 'magnus', 'abyssal underlord': 'underlord', 'abyssal-underlord': 'underlord', shredder: 'timbersaw',
+    windrunner: 'windranger', rattletrap: 'clockwerk', wisp: 'io', 'life stealer': 'lifestealer', 'life-stealer': 'lifestealer', magnataur: 'magnus', 'abyssal underlord': 'underlord', 'abyssal-underlord': 'underlord', shredder: 'timbersaw', zuus: 'zeus', necrolyte: 'necrophos', skeleton_king: 'wraith_king', doom_bringer: 'doom',
   };
   return aliases[raw] || raw.replace(/['’.-]+/g, ' ').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
-function heroDirectoryId(mod) { return normalizeHeroId(mod.hero || mod.heroId || mod.heroName || mod.heroLabel || ''); }
+function heroDirectoryIds(mod) {
+  const values = [mod.hero, mod.heroId, mod.heroName, mod.heroLabel, ...(Array.isArray(mod.heroes) ? mod.heroes : []), ...(Array.isArray(mod.heroIds) ? mod.heroIds : [])];
+  return [...new Set(values.map((value) => normalizeHeroId(value && typeof value === 'object' ? value.hero || value.heroId || value.key || value.name : value)).filter(Boolean))];
+}
 function heroDirectoryPortrait(id) { return HERO_PORTRAITS[id] || id; }
 function heroDirectoryEscape(value) { return String(value || '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character])); }
 function heroDirectoryAttribute(id) { return Object.entries(HERO_ATTRIBUTE_MAP).find(([, heroes]) => heroes.has(id))?.[0] || 'universal'; }
-function heroTags(mod) { if (Array.isArray(mod.tags)) return mod.tags.map((tag) => String(tag).trim().toLowerCase()); if (mod.tags && typeof mod.tags === 'object') return Object.entries(mod.tags).filter(([, value]) => value).map(([tag]) => tag.toLowerCase()); return []; }
-function heroHasTag(hero, tag) { return hero.mods.some((mod) => { const name = String(mod.name || '').toLowerCase(); return heroTags(mod).some((value) => value === tag || value.includes(tag)) || (tag === 'arcana' && name.includes('arcana')) || (tag === 'immortal' && name.includes('immortal')); }); }
-function heroCategoryButton(label, type, value, active = false) { return `<button class="hero-category-button${active ? ' active' : ''}" data-hero-category-type="${type}" data-hero-category-value="${value}">${label}</button>`; }
-function closeHeroStatsDialog(dialog) {
-  if (!dialog.open || dialog.classList.contains('is-closing')) return;
-  dialog.classList.add('is-closing');
-  let timer;
-  const finish = () => {
-    if (!dialog.open) return;
-    clearTimeout(timer);
-    dialog.removeEventListener('animationend', onAnimationEnd);
-    dialog.close();
-  };
-  const onAnimationEnd = (event) => { if (event.target === dialog) finish(); };
-  dialog.addEventListener('animationend', onAnimationEnd);
-  timer = setTimeout(finish, 200);
-}
-
-function showHeroDirectoryStats(hero, allHeroes) {
-  const dialog = document.createElement('dialog');
-  const rank = [...allHeroes].sort((left, right) => right.downloads - left.downloads || left.label.localeCompare(right.label)).findIndex((item) => item.id === hero.id) + 1;
-  dialog.className = 'hero-stats-dialog';
-  dialog.innerHTML = `<button class="dialog-close" aria-label="Close">×</button><div class="hero-stats-body"><p class="eyebrow">HERO POPULARITY</p><h2>${heroDirectoryEscape(hero.label)}</h2><div class="hero-stat-grid"><strong>${hero.downloads.toLocaleString()}<small>Total downloads</small></strong><strong>#${rank || '-'}<small>Popularity rank</small></strong><strong>${hero.count}<small>Catalog mods</small></strong></div></div>`;
-  document.body.appendChild(dialog);
-  dialog.showModal();
-  dialog.querySelector('.dialog-close').onclick = () => closeHeroStatsDialog(dialog);
-  dialog.addEventListener('click', (event) => { if (event.target === dialog) closeHeroStatsDialog(dialog); });
-  dialog.addEventListener('cancel', (event) => { event.preventDefault(); closeHeroStatsDialog(dialog); });
-  dialog.addEventListener('close', () => dialog.remove());
-}
-
 function renderHeroCategoryGrid() {
-  return `<label class="hero-directory-search">⌕<input id="hero-category-search" type="search" data-i18n-placeholder="search.heroCategory.placeholder" placeholder="${t('search.heroCategory.placeholder', 'Search heroes')}" value="${heroDirectoryEscape(state.heroDirectoryQuery || '')}"></label><div class="hero-category-grid"><section class="hero-category-column"><h3>Атрибуты</h3><div class="hero-category-options">${heroCategoryButton('Все', 'attribute', 'all', true)}${heroCategoryButton('Сила', 'attribute', 'strength')}${heroCategoryButton('Ловкость', 'attribute', 'agility')}${heroCategoryButton('Интеллект', 'attribute', 'intelligence')}${heroCategoryButton('Универсал', 'attribute', 'universal')}</div></section><section class="hero-category-column"><h3>Редкость</h3><div class="hero-category-options">${heroCategoryButton('Все', 'rarity', 'all', true)}${heroCategoryButton('Arcana', 'rarity', 'arcana')}${heroCategoryButton('Immortal', 'rarity', 'immortal')}</div></section><section class="hero-category-column"><h3>Теги</h3><div class="hero-category-options">${heroCategoryButton('Все', 'tag', 'all', true)}${heroCategoryButton('Аниме', 'tag', 'anime')}</div></section><section class="hero-category-column"><h3>Остальное</h3><div class="hero-category-options">${heroCategoryButton('Все', 'sort', 'all', true)}${heroCategoryButton('Недавно обновлённые', 'sort', 'recent')}${heroCategoryButton('С большим количеством модов', 'sort', 'mods')}${heroCategoryButton('Популярные', 'sort', 'popular')}</div></section></div>`;
+  const all = t('catalog.filterAll', 'All');
+  const selected = state.heroDirectoryAttributes || [];
+  const attribute = (key, label) => {
+    const active = key === 'all' ? selected.length === 0 : selected.includes(key);
+    return `<button type="button" class="hero-category-button${active ? ' active' : ''}" data-hero-attribute="${key}" aria-pressed="${active}">${label}</button>`;
+  };
+  return `<section class="hero-directory-controls"><label class="hero-directory-search">⌕<input id="hero-category-search" type="search" data-i18n-placeholder="search.heroCategory.placeholder" placeholder="${t('search.heroCategory.placeholder', 'Search heroes')}" value="${heroDirectoryEscape(state.heroDirectoryQuery || '')}"></label><div class="hero-category-options" aria-label="${t('catalog.heroAttributes', 'Attributes')}">${attribute('all', all)}${attribute('strength', t('catalog.filterStrength', 'Strength'))}${attribute('agility', t('catalog.filterAgility', 'Agility'))}${attribute('intelligence', t('catalog.filterIntelligence', 'Intelligence'))}${attribute('universal', t('catalog.filterUniversal', 'Universal'))}</div></section>`;
 }
 
 function renderHeroDirectory() {
+  if (!Array.isArray(state.heroDirectoryAttributes)) {
+    state.heroDirectoryAttributes = state.heroDirectoryAttribute && state.heroDirectoryAttribute !== 'all' ? [state.heroDirectoryAttribute] : [];
+  }
+  delete state.heroDirectoryAttribute;
+  const shouldLoadCosmetics = !state.data.cosmetics && !state.heroDirectoryCosmeticsLoading;
+  if (shouldLoadCosmetics) state.heroDirectoryCosmeticsLoading = true;
   const entries = new Map(CANONICAL_HEROES.map((id) => [id, { id, label: heroDirectoryLabel(id), count: 0, downloads: 0, updatedAt: 0, mods: [] }]));
+  const countedMods = new Map();
   for (const mod of state.data.mods || []) {
-    const id = heroDirectoryId(mod);
-    if (!id) continue;
-    const entry = entries.get(id) || { id, label: mod.heroLabel || heroDirectoryLabel(id), count: 0, downloads: 0, updatedAt: 0, mods: [] };
-    entry.label = mod.heroLabel || entry.label;
-    entry.count += 1;
-    entry.downloads += Number(mod.downloads || 0);
-    entry.updatedAt = Math.max(entry.updatedAt, Date.parse(mod.updatedAt || mod.createdAt || '') || 0);
-    entry.mods.push(mod);
-    entries.set(id, entry);
+    const modId = String(mod.id || mod.modId || `${mod.name || mod.title || ''}:${mod.categoryId || mod.category || ''}`);
+    for (const id of heroDirectoryIds(mod)) {
+      const entry = entries.get(id) || { id, label: heroDirectoryLabel(id), count: 0, downloads: 0, updatedAt: 0, mods: [] };
+      if (!countedMods.has(id)) countedMods.set(id, new Set());
+      if (!countedMods.get(id).has(modId)) {
+        countedMods.get(id).add(modId);
+        entry.count += 1;
+        entry.downloads += Number(mod.downloads || 0);
+        entry.updatedAt = Math.max(entry.updatedAt, Date.parse(mod.updatedAt || mod.createdAt || '') || 0);
+        entry.mods.push(mod);
+      }
+      entries.set(id, entry);
+    }
   }
   const heroes = [...entries.values()];
-  const popularity = [...heroes].sort((left, right) => right.downloads - left.downloads || left.label.localeCompare(right.label));
-  const rankById = new Map(popularity.map((hero, index) => [hero.id, index + 1]));
-  $('#content').innerHTML = `<div class="hero-directory-head"><div class="hero-directory-tools" data-category-grid="1">${renderHeroCategoryGrid()}</div><span class="result-count" data-hero-result-count>${heroes.length} heroes</span></div><div class="hero-grid">${heroes.map((hero) => `<article class="hero-card" data-hero="${heroDirectoryEscape(hero.id)}" role="button" tabindex="0"><img src="${HERO_PORTRAIT_BASE}${heroDirectoryPortrait(hero.id)}.png" alt="${heroDirectoryEscape(hero.label)}"><span class="hero-card-shade"></span><span class="hero-card-copy"><strong>${heroDirectoryEscape(hero.label)}</strong><small>${hero.count} mods</small></span><button class="hero-downloads" data-hero-stats="${heroDirectoryEscape(hero.id)}" aria-label="Show ${heroDirectoryEscape(hero.label)} download statistics" title="Total downloads · popularity rank">?</button></article>`).join('')}</div>`;
+  const cosmeticHeroes = new Map((state.data.cosmetics?.heroes || []).map((hero) => [normalizeHeroId(hero.key), hero]));
+  const skinCount = (hero) => (cosmeticHeroes.get(hero.id)?.slots || []).reduce((count, slot) => count + (slot.options || []).length, 0);
+  const russian = state.data?.settings?.appLanguage === 'ru';
+  const russianCountWord = (count, one, few, many) => {
+    const lastTwo = count % 100;
+    const last = count % 10;
+    return lastTwo >= 11 && lastTwo <= 14 ? many : last === 1 ? one : last >= 2 && last <= 4 ? few : many;
+  };
+  const heroCount = (count) => `${count} ${russian ? russianCountWord(count, 'герой', 'героя', 'героев') : count === 1 ? 'hero' : 'heroes'}`;
+  const modCount = (count) => `${count} ${russian ? russianCountWord(count, 'мод', 'мода', 'модов') : count === 1 ? 'mod' : 'mods'}`;
+  const countLabel = (hero) => {
+    const skins = skinCount(hero);
+    if (!state.data.cosmetics && state.heroDirectoryCosmeticsLoading) return t('catalog.heroItemsLoading', 'Loading items…');
+    if (skins) return `${formatTranslation(t('catalog.heroSkinsCount', '{count} skins'), { count: skins })}${hero.count ? ` · ${modCount(hero.count)}` : ''}`;
+    return modCount(hero.count);
+  };
+  $('#content').innerHTML = `<div class="hero-directory-head"><div class="hero-directory-tools" data-category-grid="1">${renderHeroCategoryGrid()}</div><span class="result-count" data-hero-result-count>${heroCount(heroes.length)}</span></div><div class="hero-grid">${heroes.map((hero) => `<article class="hero-card" data-hero="${heroDirectoryEscape(hero.id)}" role="button" tabindex="0"><img src="${HERO_PORTRAIT_BASE}${heroDirectoryPortrait(hero.id)}.png" alt="${heroDirectoryEscape(hero.label)}"><span class="hero-card-shade"></span><span class="hero-card-copy"><strong>${heroDirectoryEscape(hero.label)}</strong><small>${countLabel(hero)}</small></span></article>`).join('')}</div>`;
   document.querySelector('.hero-directory-head')?.setAttribute('data-enhanced', '1');
-  state.heroDirectoryFilters ||= { attribute: 'all', rarity: 'all', tag: 'all', sort: 'all' };
-  const selected = state.heroDirectoryFilters;
-  const filterValues = { attribute: ['strength', 'agility', 'intelligence', 'universal'], rarity: ['arcana', 'immortal'], tag: ['anime'], sort: ['recent', 'mods', 'popular'] };
-  Object.keys(filterValues).forEach((type) => { if (selected[type] !== 'all') selected[type] = Array.isArray(selected[type]) ? selected[type] : selected[type] ? [selected[type]] : []; if (!selected[type].length || selected[type].length === filterValues[type].length) selected[type] = 'all'; });
-  const matchesFilter = (type, hero) => selected[type] === 'all' || (type === 'attribute' ? selected[type].includes(heroDirectoryAttribute(hero.id)) : selected[type].some((tag) => heroHasTag(hero, tag)));
   const apply = () => {
     const query = String(state.heroDirectoryQuery || '').trim().toLowerCase();
-    let visible = heroes.filter((hero) => (!query || hero.label.toLowerCase().includes(query) || hero.id.includes(query)) && matchesFilter('attribute', hero) && matchesFilter('rarity', hero) && matchesFilter('tag', hero));
-    if (selected.sort !== 'all' && selected.sort.includes('recent')) visible.sort((left, right) => right.updatedAt - left.updatedAt);
-    else if (selected.sort !== 'all' && selected.sort.includes('mods')) visible.sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
-    else if (selected.sort !== 'all' && selected.sort.includes('popular')) visible.sort((left, right) => right.downloads - left.downloads || left.label.localeCompare(right.label));
-    else visible.sort((left, right) => left.label.localeCompare(right.label));
+    const selectedAttributes = state.heroDirectoryAttributes;
+    const visible = heroes.filter((hero) => (!query || hero.label.toLowerCase().includes(query) || hero.id.includes(query)) && (!selectedAttributes.length || selectedAttributes.includes(heroDirectoryAttribute(hero.id))));
     const visibleIds = new Set(visible.map((hero) => hero.id));
     const grid = document.querySelector('.hero-grid');
     const cards = new Map([...document.querySelectorAll('.hero-card')].map((card) => [card.dataset.hero, card]));
     if (grid) visible.forEach((hero) => { const card = cards.get(hero.id); if (card) grid.appendChild(card); });
     document.querySelectorAll('.hero-card').forEach((card) => { card.style.display = visibleIds.has(card.dataset.hero) ? '' : 'none'; });
-    const result = document.querySelector('[data-hero-result-count]'); if (result) result.textContent = `${visible.length} heroes`;
-    document.querySelectorAll('[data-hero-category-type]').forEach((button) => { const type = button.dataset.heroCategoryType; const value = button.dataset.heroCategoryValue; button.classList.toggle('active', value === 'all' ? selected[type] === 'all' : selected[type] !== 'all' && selected[type].includes(value)); });
+    const result = document.querySelector('[data-hero-result-count]'); if (result) result.textContent = heroCount(visible.length);
   };
   document.querySelector('#hero-category-search')?.addEventListener('input', (event) => {
     state.heroDirectoryQuery = event.target.value;
     apply();
   });
-  document.querySelectorAll('[data-hero-category-type]').forEach((button) => button.onclick = () => { const type = button.dataset.heroCategoryType; const value = button.dataset.heroCategoryValue; if (value === 'all') selected[type] = 'all'; else if (type === 'tag') selected[type] = selected[type] !== 'all' && selected[type].includes(value) ? 'all' : [value]; else { const values = selected[type] === 'all' ? [] : [...selected[type]]; const index = values.indexOf(value); if (index >= 0) values.splice(index, 1); else values.push(value); selected[type] = !values.length || values.length === filterValues[type].length ? 'all' : values; } state.heroDirectoryFilters = { ...selected }; apply(); });
-  document.querySelectorAll('[data-hero-stats]').forEach((button) => button.onclick = (event) => { event.stopPropagation(); const hero = heroes.find((item) => item.id === button.dataset.heroStats); if (hero) showHeroDirectoryStats(hero, heroes); });
-  document.querySelectorAll('[data-hero]').forEach((node) => { node.onclick = (event) => { if (event.target.closest('[data-hero-stats]')) return; state.hero = node.dataset.hero; state.heroSlot = 'all'; state.heroQuery = ''; loadCatalog(); }; node.onkeydown = (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); node.click(); } }; });
+  document.querySelectorAll('[data-hero-attribute]').forEach((button) => button.onclick = () => {
+    const attribute = button.dataset.heroAttribute;
+    if (attribute === 'all') state.heroDirectoryAttributes = [];
+    else {
+      const selected = new Set(state.heroDirectoryAttributes);
+      selected.has(attribute) ? selected.delete(attribute) : selected.add(attribute);
+      state.heroDirectoryAttributes = [...selected];
+    }
+    document.querySelectorAll('[data-hero-attribute]').forEach((item) => {
+      const active = item.dataset.heroAttribute === 'all' ? state.heroDirectoryAttributes.length === 0 : state.heroDirectoryAttributes.includes(item.dataset.heroAttribute);
+      item.classList.toggle('active', active);
+      item.setAttribute('aria-pressed', String(active));
+    });
+    apply();
+  });
+  document.querySelectorAll('[data-hero]').forEach((node) => { node.onclick = () => { state.hero = node.dataset.hero; state.heroSlot = 'all'; state.heroQuery = ''; loadCatalog(); }; node.onkeydown = (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); node.click(); } }; });
   apply();
+  if (shouldLoadCosmetics) {
+    call('cosmetics:list').then((data) => { state.data.cosmetics = data; }).catch((error) => { state.data.cosmetics = { heroes: [], error: error.message }; }).finally(() => {
+      state.heroDirectoryCosmeticsLoading = false;
+      if (state.view === 'mods' && state.section === 'heroes') {
+        if (state.hero) renderHeroDetail();
+        else renderHeroDirectory();
+      }
+    });
+  }
 }
 
 window.renderHeroDirectory = renderHeroDirectory;

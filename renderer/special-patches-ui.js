@@ -122,12 +122,12 @@ specialPatchObserver.observe(document.body, { childList: true, subtree: true });
 document.addEventListener('click', (event) => {
   const detailsButton = event.target.closest('[data-action="details"][data-id]');
   if (detailsButton) state.specialPreviewModId = detailsButton.dataset.id;
-  const bulkButton = event.target.closest('#library-select-all, #library-enable-selected, #library-disable-selected, #library-remove-selected, #library-pack');
+  const bulkButton = event.target.closest('#library-delete-all, #library-enable-selected, #library-disable-selected, #library-remove-selected, #library-pack');
   if (bulkButton) {
     for (const [id, item] of Object.entries(state.data?.installed || {})) {
       if (item?.modType === 'special_patch') state.librarySelection.delete(id);
     }
-    if (bulkButton.id === 'library-select-all') queueMicrotask(() => {
+    if (bulkButton.id === 'library-delete-all') queueMicrotask(() => {
       for (const [id, item] of Object.entries(state.data?.installed || {})) {
         if (item?.modType === 'special_patch') state.librarySelection.delete(id);
       }
